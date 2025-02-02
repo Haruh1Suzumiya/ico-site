@@ -1,37 +1,71 @@
 import React from 'react';
 import { NavLink, Routes, Route, Navigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import ICOCreatePage from './ICOCreatePage';
 import ICOControlPage from './ICOControlPage';
-import { motion } from 'framer-motion';
 
 const AdminDashboard: React.FC = () => {
   return (
-    <div className="p-4">
-      <h1 className="text-3xl font-bold mb-6">管理者ダッシュボード</h1>
-      <div className="mb-6 border-b">
-        <nav className="flex space-x-4">
-          <NavLink
-            to="create"
-            className={({ isActive }) =>
-              isActive ? "pb-2 border-b-2 border-blue-600 text-blue-600" : "pb-2 text-gray-600 hover:text-blue-600"
-            }
-          >
-            ICO作成
-          </NavLink>
-          <NavLink
-            to="control"
-            className={({ isActive }) =>
-              isActive ? "pb-2 border-b-2 border-blue-600 text-blue-600" : "pb-2 text-gray-600 hover:text-blue-600"
-            }
-          >
-            ICO制御
-          </NavLink>
-        </nav>
-      </div>
+    <div className="max-w-6xl mx-auto px-4 py-8">
       <motion.div
-        initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4"
+      >
+        <div>
+          <h1 className="text-3xl font-bold text-primary-900">管理者ダッシュボード</h1>
+          <p className="text-primary-600 mt-2">ICOプロジェクトの作成と管理</p>
+        </div>
+      </motion.div>
+
+      <nav className="mb-8">
+        <div className="border-b border-primary-200">
+          <div className="flex space-x-8">
+            <NavLink
+              to="create"
+              className={({ isActive }) => 
+                "relative pb-4 px-1 border-b-2 font-medium transition-colors " + 
+                (isActive
+                  ? "border-primary-900 text-primary-900"
+                  : "border-transparent text-primary-600 hover:text-primary-900 hover:border-primary-300"
+                )
+              }
+            >
+              <div className="flex items-center space-x-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                <span>ICO作成</span>
+              </div>
+            </NavLink>
+            
+            <NavLink
+              to="control"
+              className={({ isActive }) => 
+                "relative pb-4 px-1 border-b-2 font-medium transition-colors " + 
+                (isActive
+                  ? "border-primary-900 text-primary-900"
+                  : "border-transparent text-primary-600 hover:text-primary-900 hover:border-primary-300"
+                )
+              }
+            >
+              <div className="flex items-center space-x-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>ICO制御</span>
+              </div>
+            </NavLink>
+          </div>
+        </div>
+      </nav>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
+        className="bg-white rounded-xl shadow-lg"
       >
         <Routes>
           <Route path="/" element={<Navigate to="create" replace />} />
