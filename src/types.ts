@@ -3,27 +3,46 @@ export interface ICOData {
   name: string;
   description: string;
   price: number;
-  image_url?: string;
   symbol: string;
   start_date: string;
   end_date: string;
   total_supply: number;
   contract_id: bigint;
+  header_image_url: string;
+  icon_image_url: string;
+  image_url?: string;
+  min_purchase: number;
+  max_purchase: number;
   isActive: boolean;
   created_at: string;
+}
+
+export interface ICODetails {
+  markdown_content: string;
+  twitter_url?: string;
+  discord_url?: string;
+  instagram_url?: string;
+  website_url?: string;
+  whitepaper_url?: string;
+}
+
+export interface ExtendedICOData extends ICOData {
+  details: ICODetails;
 }
 
 export interface Purchase {
   id: string;
   user_id: string;
   ico_id: string;
-  amount: bigint;
-  price_per_token: bigint;
+  amount: number;
+  price_per_token: number;
+  tx_hash: string;
   created_at: string;
   icos: {
     name: string;
     symbol: string;
     price: number;
+    icon_image_url?: string;
     image_url?: string;
   };
 }

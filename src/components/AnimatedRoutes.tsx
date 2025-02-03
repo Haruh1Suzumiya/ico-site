@@ -8,6 +8,7 @@ import PurchaseComplete from '../pages/PurchaseComplete';
 import AdminDashboard from '../pages/AdminDashboard';
 import Signup from '../pages/Signup';
 import Login from '../pages/Login';
+import VerifyEmail from '../pages/VerifyEmail';
 
 const pageVariants = {
   initial: { opacity: 0, y: 20 },
@@ -52,6 +53,7 @@ const AnimatedRoutes: React.FC<AnimatedRoutesProps> = ({ isAuthenticated, isAdmi
           <Routes location={location}>
             <Route path="/signup" element={<Signup />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="*" element={<Login />} />
           </Routes>
         )}

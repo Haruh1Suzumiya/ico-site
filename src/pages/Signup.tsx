@@ -11,29 +11,38 @@ const Signup: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  const checkExistingEmail = async (email: string) => {
+    const { error } = await supabaseClient.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false }
+    });
+    return !error;
+  };
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    if (password !== confirmPassword) {
-      setError('パスワードが一致しません');
-      setLoading(false);
-      return;
-    }
-
     try {
-      const { error } = await supabaseClient.auth.signUp({
+      if (password !== confirmPassword) {
+        throw new Error('パスワードが一致しません');
+      }
+
+      const emailExists = await checkExistingEmail(email);
+      if (emailExists) {
+        throw new Error('このメールアドレスは既に登録されています');
+      }
+
+      const { error: signUpError } = await supabaseClient.auth.signUp({
         email,
         password,
       });
-      if (error) throw error;
       
-      // 成功メッセージを表示してログインページへ
-      navigate('/login', { 
-        state: { 
-          message: 'アカウントが作成されました。メールを確認してログインしてください。' 
-        } 
+      if (signUpError) throw signUpError;
+
+      navigate('/verify-email', { 
+        state: { email } 
       });
     } catch (error: any) {
       setError(error.message);
@@ -185,4 +194,4 @@ const Signup: React.FC = () => {
   );
 };
 
-export default Signup;
+export default Signup
