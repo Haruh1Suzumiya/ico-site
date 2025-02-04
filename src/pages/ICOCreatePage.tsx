@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useContractWrite } from 'wagmi';
+import { useContractWrite, useContractRead, useWaitForTransaction } from 'wagmi';
 import { parseEther } from 'viem';
 import supabaseClient from '../lib/supabaseClient';
 import { ICO_ABI } from '../contracts/abis';
@@ -27,13 +27,63 @@ interface ICOFormData {
   whitepaper: string;
 }
 
-interface SalePhase {
-  startDate: string;
-  endDate: string;
-  price: string;
-  maxAllocation: string;
+interface VestingSchedule {
+  releaseDate: string;
   percentage: string;
 }
+
+interface DateSelectorProps {
+  value: string;
+  onChange: (value: string) => void;
+  minDate?: Date;
+  label: string;
+}
+
+const DateSelector: React.FC<DateSelectorProps> = ({ value, onChange, minDate, label }) => {
+  const [date, setDate] = useState(() => value.split('T')[0] || '');
+  const [time, setTime] = useState(() => value.split('T')[1] || '12:00:00');
+
+  const handleDateChange = (newDate: string) => {
+    setDate(newDate);
+    if (newDate && time) {
+      onChange(`${newDate}T${time}`);
+    }
+  };
+
+  const handleTimeChange = (newTime: string) => {
+    setTime(newTime);
+    if (date && newTime) {
+      onChange(`${date}T${newTime}`);
+    }
+  };
+
+  const today = new Date();
+  const minDateString = minDate ? minDate.toISOString().split('T')[0] : today.toISOString().split('T')[0];
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-primary-700">
+        {label}
+      </label>
+      <div className="grid grid-cols-2 gap-4">
+        <input
+          type="date"
+          value={date}
+          min={minDateString}
+          onChange={(e) => handleDateChange(e.target.value)}
+          className="input"
+        />
+        <input
+          type="time"
+          value={time}
+          onChange={(e) => handleTimeChange(e.target.value)}
+          className="input"
+          step="1"
+        />
+      </div>
+    </div>
+  );
+};
 
 const ICOCreatePage: React.FC = () => {
   const [formData, setFormData] = useState<ICOFormData>({
@@ -56,12 +106,9 @@ const ICOCreatePage: React.FC = () => {
     whitepaper: ''
   });
 
-  const [salePhases, setSalePhases] = useState<SalePhase[]>([{
-    startDate: '',
-    endDate: '',
-    price: '',
-    maxAllocation: '',
-    percentage: ''
+  const [vestingSchedules, setVestingSchedules] = useState<VestingSchedule[]>([{
+    releaseDate: '',
+    percentage: '100' // 初期値を100%に設定
   }]);
 
   const [step, setStep] = useState<number>(1);
@@ -69,11 +116,116 @@ const ICOCreatePage: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [headerImagePreview, setHeaderImagePreview] = useState<string | null>(null);
   const [iconImagePreview, setIconImagePreview] = useState<string | null>(null);
+  const [headerImageUrl, setHeaderImageUrl] = useState<string>('');
+  const [iconImageUrl, setIconImageUrl] = useState<string>('');
 
-  const { write: createICO } = useContractWrite({
+  // ICOのカウントを取得
+  const { data: icoCount } = useContractRead({
+    address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
+    abi: ICO_ABI,
+    functionName: 'icoCount'
+  });
+
+  const { write: createICO, data: createICOData } = useContractWrite({
     address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
     abi: ICO_ABI,
     functionName: 'createICO'
+  });
+
+  const { isLoading: isWaitingForTx } = useWaitForTransaction({
+    hash: createICOData?.hash,
+    onSuccess: async () => {
+      try {
+        // Save to database with contract_id
+        const { data: icoData, error: icoError } = await supabaseClient
+          .from('icos')
+          .insert([{
+            name: formData.name,
+            symbol: formData.symbol,
+            description: formData.description,
+            price: parseFloat(formData.price),
+            start_date: formData.startDate,
+            end_date: formData.endDate,
+            total_supply: parseFloat(formData.totalSupply),
+            min_purchase: parseFloat(formData.minPurchase),
+            max_purchase: parseFloat(formData.maxPurchase),
+            header_image_url: headerImageUrl,
+            icon_image_url: iconImageUrl,
+            is_active: true,
+            contract_id: Number(icoCount)
+          }])
+          .select()
+          .single();
+
+        if (icoError) throw icoError;
+
+        // Save ICO details
+        const { error: detailsError } = await supabaseClient
+          .from('ico_details')
+          .insert([{
+            ico_id: icoData.id,
+            markdown_content: formData.markdownContent,
+            twitter_url: formData.twitter,
+            discord_url: formData.discord,
+            instagram_url: formData.instagram,
+            website_url: formData.website,
+            whitepaper_url: formData.whitepaper
+          }]);
+
+        if (detailsError) throw detailsError;
+
+        // Save vesting schedules
+        const { error: vestingError } = await supabaseClient
+          .from('vesting_schedules')
+          .insert(
+            vestingSchedules.map(schedule => ({
+              ico_id: icoData.id,
+              release_date: schedule.releaseDate,
+              release_percent: parseFloat(schedule.percentage)
+            }))
+          );
+
+        if (vestingError) throw vestingError;
+
+        alert('ICOが正常に作成されました！');
+
+        // Reset form
+        setFormData({
+          name: '',
+          symbol: '',
+          description: '',
+          markdownContent: '',
+          price: '',
+          totalSupply: '',
+          startDate: '',
+          endDate: '',
+          minPurchase: '',
+          maxPurchase: '',
+          headerImage: null,
+          iconImage: null,
+          twitter: '',
+          discord: '',
+          instagram: '',
+          website: '',
+          whitepaper: ''
+        });
+        setVestingSchedules([{
+          releaseDate: '',
+          percentage: '100'
+        }]);
+        setHeaderImagePreview(null);
+        setIconImagePreview(null);
+        setHeaderImageUrl('');
+        setIconImageUrl('');
+        setStep(1);
+
+      } catch (err) {
+        console.error('Database error:', err);
+        setError('データベースの更新中にエラーが発生しました');
+      } finally {
+        setLoading(false);
+      }
+    }
   });
 
   const handleInputChange = (
@@ -111,24 +263,43 @@ const ICOCreatePage: React.FC = () => {
     setFormData(prev => ({ ...prev, [type]: value }));
   };
 
-  const handlePhaseChange = (index: number, field: keyof SalePhase, value: string) => {
-    const newPhases = [...salePhases];
-    newPhases[index] = { ...newPhases[index], [field]: value };
-    setSalePhases(newPhases);
+  const handleVestingScheduleChange = (index: number, field: keyof VestingSchedule, value: string) => {
+    const newSchedules = [...vestingSchedules];
+    newSchedules[index] = { ...newSchedules[index], [field]: value };
+    
+    // パーセンテージが変更された場合、合計を100%に調整
+    if (field === 'percentage') {
+      const total = newSchedules.reduce((sum, s, i) => {
+        return i === index ? sum + parseFloat(value || '0') : sum + parseFloat(s.percentage || '0');
+      }, 0);
+      
+      if (total > 100) {
+        alert('合計が100%を超えています。適切な値に調整してください。');
+        return;
+      }
+    }
+    
+    setVestingSchedules(newSchedules);
   };
 
-  const addPhase = () => {
-    setSalePhases([...salePhases, {
-      startDate: '',
-      endDate: '',
-      price: '',
-      maxAllocation: '',
-      percentage: ''
+  const addVestingSchedule = () => {
+    const currentTotal = vestingSchedules.reduce((sum, schedule) => 
+      sum + parseFloat(schedule.percentage || '0'), 0
+    );
+    
+    if (currentTotal >= 100) {
+      alert('すでに100%に達しています。既存のスケジュールを調整してください。');
+      return;
+    }
+
+    setVestingSchedules([...vestingSchedules, {
+      releaseDate: '',
+      percentage: (100 - currentTotal).toString() // 残りのパーセンテージを設定
     }]);
   };
 
-  const removePhase = (index: number) => {
-    setSalePhases(salePhases.filter((_, i) => i !== index));
+  const removeVestingSchedule = (index: number) => {
+    setVestingSchedules(vestingSchedules.filter((_, i) => i !== index));
   };
 
   const validateStep = (currentStep: number): boolean => {
@@ -144,19 +315,20 @@ const ICOCreatePage: React.FC = () => {
           formData.startDate && 
           formData.endDate &&
           formData.minPurchase &&
-          formData.maxPurchase
+          formData.maxPurchase &&
+          new Date(formData.startDate) > new Date() &&
+          new Date(formData.endDate) > new Date(formData.startDate)
         );
       case 4:
-        const totalPercentage = salePhases.reduce((sum, phase) => 
-          sum + (phase.percentage ? parseFloat(phase.percentage) : 0), 0
+        const totalPercentage = vestingSchedules.reduce((sum, schedule) => 
+          sum + (schedule.percentage ? parseFloat(schedule.percentage) : 0), 0
         );
-        return salePhases.every(phase => 
-          phase.startDate && 
-          phase.endDate && 
-          phase.price && 
-          phase.maxAllocation &&
-          phase.percentage
-        ) && Math.abs(totalPercentage - 100) < 0.01; // 許容誤差0.01%
+        const hasValidSchedules = vestingSchedules.every(schedule => 
+          schedule.releaseDate && 
+          schedule.percentage &&
+          new Date(schedule.releaseDate) > new Date(formData.endDate)
+        );
+        return hasValidSchedules && Math.abs(totalPercentage - 100) < 0.0001;
       default:
         return true;
     }
@@ -168,9 +340,7 @@ const ICOCreatePage: React.FC = () => {
     setError('');
 
     try {
-      let headerImageUrl = '';
-      let iconImageUrl = '';
-
+      // Upload images first
       if (formData.headerImage) {
         const { data: headerData, error: headerError } = await supabaseClient
           .storage
@@ -178,7 +348,7 @@ const ICOCreatePage: React.FC = () => {
           .upload(`header-${Date.now()}-${formData.headerImage.name}`, formData.headerImage);
         
         if (headerError) throw headerError;
-        headerImageUrl = headerData.path;
+        setHeaderImageUrl(headerData.path);
       }
 
       if (formData.iconImage) {
@@ -188,28 +358,46 @@ const ICOCreatePage: React.FC = () => {
           .upload(`icon-${Date.now()}-${formData.iconImage.name}`, formData.iconImage);
         
         if (iconError) throw iconError;
-        iconImageUrl = iconData.path;
+        setIconImageUrl(iconData.path);
       }
 
+      // 数値の変換を修正
       const startTime = BigInt(Math.floor(new Date(formData.startDate).getTime() / 1000));
       const endTime = BigInt(Math.floor(new Date(formData.endDate).getTime() / 1000));
+      
+      // parseEtherの使用法を修正
       const totalSupply = parseEther(formData.totalSupply);
       const tokenPrice = parseEther(formData.price);
       const minPurchase = parseEther(formData.minPurchase);
       const maxPurchase = parseEther(formData.maxPurchase);
 
-      // Phase dates and percentages
-      const phaseStartTimes = salePhases.map(phase => 
-        BigInt(Math.floor(new Date(phase.startDate).getTime() / 1000))
+      // Vesting schedules
+      const vestingDates = vestingSchedules.map(schedule => 
+        BigInt(Math.floor(new Date(schedule.releaseDate).getTime() / 1000))
       );
-      const phaseEndTimes = salePhases.map(phase => 
-        BigInt(Math.floor(new Date(phase.endDate).getTime() / 1000))
+      const vestingPercents = vestingSchedules.map(schedule => 
+        BigInt(Math.floor(parseFloat(schedule.percentage))) // すでに100%ベースの値なのでそのまま使用
       );
-      const phasePrices = salePhases.map(phase => parseEther(phase.price));
-      const phaseAllocations = salePhases.map(phase => parseEther(phase.maxAllocation));
 
-      // Create ICO on blockchain
-      await createICO({
+      console.log('Contract parameters:', {
+        name: formData.name,
+        symbol: formData.symbol,
+        totalSupply: totalSupply.toString(),
+        tokenPrice: tokenPrice.toString(),
+        startTime: startTime.toString(),
+        endTime: endTime.toString(),
+        minPurchase: minPurchase.toString(),
+        maxPurchase: maxPurchase.toString(),
+        vestingDates: vestingDates.map(d => d.toString()),
+        vestingPercents: vestingPercents.map(p => p.toString())
+      });
+
+      if (!createICO) {
+        throw new Error('createICO function is not available');
+      }
+  
+      // Contract creation
+      const result = await createICO({
         args: [
           formData.name,
           formData.symbol,
@@ -219,108 +407,20 @@ const ICOCreatePage: React.FC = () => {
           endTime,
           minPurchase,
           maxPurchase,
-          phaseStartTimes,
-          phaseEndTimes,
-          phasePrices,
-          phaseAllocations
+          vestingDates,
+          vestingPercents
         ]
       });
-
-      // Save to database
-      const { data: icoData, error: icoError } = await supabaseClient
-        .from('icos')
-        .insert([{
-          name: formData.name,
-          symbol: formData.symbol,
-          description: formData.description,
-          price: parseFloat(formData.price),
-          start_date: formData.startDate,
-          end_date: formData.endDate,
-          total_supply: parseFloat(formData.totalSupply),
-          min_purchase: parseFloat(formData.minPurchase),
-          max_purchase: parseFloat(formData.maxPurchase),
-          header_image_url: headerImageUrl,
-          icon_image_url: iconImageUrl,
-          is_active: true
-        }])
-        .select()
-        .single();
-
-      if (icoError) throw icoError;
-
-      // Save ICO details
-      const { error: detailsError } = await supabaseClient
-        .from('ico_details')
-        .insert([{
-          ico_id: icoData.id,
-          markdown_content: formData.markdownContent,
-          twitter_url: formData.twitter,
-          discord_url: formData.discord,
-          instagram_url: formData.instagram,
-          website_url: formData.website,
-          whitepaper_url: formData.whitepaper
-        }]);
-
-      if (detailsError) throw detailsError;
-
-      // Save sale phases
-      const { error: phasesError } = await supabaseClient
-        .from('sale_phases')
-        .insert(
-          salePhases.map((phase, index) => ({
-            ico_id: icoData.id,
-            phase_number: index + 1,
-            start_date: phase.startDate,
-            end_date: phase.endDate,
-            price: parseFloat(phase.price),
-            max_allocation: parseFloat(phase.maxAllocation),
-            percentage: parseFloat(phase.percentage)
-          }))
-        );
-
-      if (phasesError) throw phasesError;
-
-      // Reset form
-      setFormData({
-        name: '',
-        symbol: '',
-        description: '',
-        markdownContent: '',
-        price: '',
-        totalSupply: '',
-        startDate: '',
-        endDate: '',
-        minPurchase: '',
-        maxPurchase: '',
-        headerImage: null,
-        iconImage: null,
-        twitter: '',
-        discord: '',
-        instagram: '',
-        website: '',
-        whitepaper: ''
-      });
-      setSalePhases([{
-        startDate: '',
-        endDate: '',
-        price: '',
-        maxAllocation: '',
-        percentage: ''
-      }]);
-      setHeaderImagePreview(null);
-      setIconImagePreview(null);
-      setStep(1);
-      
-      alert('ICOが正常に作成されました！');
-
+  
+      console.log('Transaction result:', result);
+  
     } catch (err: any) {
       console.error('ICO creation error:', err);
       setError(err.message || 'ICOの作成中にエラーが発生しました');
-    } finally {
       setLoading(false);
     }
   };
-
+  
   return (
     <div className="max-w-3xl mx-auto p-8">
       {/* ステップインジケーター */}
@@ -537,31 +637,18 @@ const ICOCreatePage: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-primary-700 mb-2">
-                    開始日時
-                  </label>
-                  <input
-                    type="datetime-local"
-                    name="startDate"
-                    value={formData.startDate}
-                    onChange={handleInputChange}
-                    className="input"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-primary-700 mb-2">
-                    終了日時
-                  </label>
-                  <input
-                    type="datetime-local"
-                    name="endDate"
-                    value={formData.endDate}
-                    onChange={handleInputChange}
-                    className="input"
-                  />
-                </div>
+                <DateSelector
+                  label="開始日時"
+                  value={formData.startDate}
+                  onChange={(value) => setFormData(prev => ({ ...prev, startDate: value }))}
+                  minDate={new Date()}
+                />
+                <DateSelector
+                  label="終了日時"
+                  value={formData.endDate}
+                  onChange={(value) => setFormData(prev => ({ ...prev, endDate: value }))}
+                  minDate={formData.startDate ? new Date(formData.startDate) : new Date()}
+                />
               </div>
             </div>
           )}
@@ -569,21 +656,28 @@ const ICOCreatePage: React.FC = () => {
           {step === 4 && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
-                <h3 className="text-lg font-medium text-primary-900">販売フェーズ設定</h3>
+                <h3 className="text-lg font-medium text-primary-900">ベスティングスケジュール</h3>
                 <button
                   type="button"
-                  onClick={addPhase}
+                  onClick={addVestingSchedule}
                   className="btn-secondary flex items-center space-x-2"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                   </svg>
-                  <span>フェーズを追加</span>
+                  <span>スケジュールを追加</span>
                 </button>
               </div>
 
+              <div className="bg-yellow-50 p-4 rounded-lg">
+                <p className="text-yellow-800">
+                  ベスティングスケジュールの合計は100%である必要があります。
+                  現在の合計: {vestingSchedules.reduce((sum, schedule) => sum + parseFloat(schedule.percentage || '0'), 0)}%
+                </p>
+              </div>
+
               <AnimatePresence>
-                {salePhases.map((phase, index) => (
+                {vestingSchedules.map((schedule, index) => (
                   <motion.div
                     key={index}
                     initial={{ opacity: 0, y: 20 }}
@@ -592,11 +686,11 @@ const ICOCreatePage: React.FC = () => {
                     className="p-6 bg-primary-50 rounded-lg space-y-4"
                   >
                     <div className="flex justify-between items-center">
-                      <h4 className="font-medium text-primary-900">フェーズ {index + 1}</h4>
+                      <h4 className="font-medium text-primary-900">スケジュール {index + 1}</h4>
                       {index > 0 && (
                         <button
                           type="button"
-                          onClick={() => removePhase(index)}
+                          onClick={() => removeVestingSchedule(index)}
                           className="text-red-600 hover:text-red-700"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -607,65 +701,21 @@ const ICOCreatePage: React.FC = () => {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-primary-700 mb-2">
-                          開始日時
-                        </label>
-                        <input
-                          type="datetime-local"
-                          value={phase.startDate}
-                          onChange={(e) => handlePhaseChange(index, 'startDate', e.target.value)}
-                          className="input"
-                        />
-                      </div>
+                      <DateSelector
+                        label="解放日時"
+                        value={schedule.releaseDate}
+                        onChange={(value) => handleVestingScheduleChange(index, 'releaseDate', value)}
+                        minDate={formData.endDate ? new Date(formData.endDate) : new Date()}
+                      />
 
                       <div>
                         <label className="block text-sm font-medium text-primary-700 mb-2">
-                          終了日時
-                        </label>
-                        <input
-                          type="datetime-local"
-                          value={phase.endDate}
-                          onChange={(e) => handlePhaseChange(index, 'endDate', e.target.value)}
-                          className="input"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-primary-700 mb-2">
-                          価格 (USDT)
+                          解放割合 (%)
                         </label>
                         <input
                           type="number"
-                          value={phase.price}
-                          onChange={(e) => handlePhaseChange(index, 'price', e.target.value)}
-                          className="input"
-                          placeholder="0.0"
-                          step="0.000001"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-primary-700 mb-2">
-                          最大配分 (USDT)
-                        </label>
-                        <input
-                          type="number"
-                          value={phase.maxAllocation}
-                          onChange={(e) => handlePhaseChange(index, 'maxAllocation', e.target.value)}
-                          className="input"
-                          placeholder="10000"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-primary-700 mb-2">
-                          配分割合 (%)
-                        </label>
-                        <input
-                          type="number"
-                          value={phase.percentage}
-                          onChange={(e) => handlePhaseChange(index, 'percentage', e.target.value)}
+                          value={schedule.percentage}
+                          onChange={(e) => handleVestingScheduleChange(index, 'percentage', e.target.value)}
                           className="input"
                           placeholder="20"
                           min="0"
@@ -703,10 +753,10 @@ const ICOCreatePage: React.FC = () => {
         <button
           type="button"
           onClick={() => step === 4 ? handleSubmit() : setStep(step + 1)}
-          disabled={!validateStep(step) || loading}
-          className={`btn-primary ml-auto ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+          disabled={!validateStep(step) || loading || isWaitingForTx}
+          className={`btn-primary ml-auto ${(loading || isWaitingForTx) ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
-          {loading ? (
+          {loading || isWaitingForTx ? (
             <span className="flex items-center space-x-2">
               <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
