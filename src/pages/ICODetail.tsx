@@ -1,20 +1,27 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { useAccount, useContractWrite } from 'wagmi';
+import { useAccount, useContractWrite, useWaitForTransaction } from 'wagmi';
 import { parseEther } from 'viem';
+import ReactMarkdown from 'react-markdown';
 import supabaseClient from '../lib/supabaseClient';
-import { ICOData } from '../types';
+import { ICOData, ICODetails } from '../types';
 import { ERC20_ABI, ICO_ABI } from '../contracts/abis';
 import StyledConnectButton from '../components/StyledConnectButton';
+import PurchaseConfirmModal from '../components/PurchaseConfirmModal';
+import SocialLinks from '../components/SocialLinks';
 import { AuthContext } from '../context/AuthContext';
 
 const ICODetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [ico, setIco] = useState<ICOData | null>(null);
-  const [amount, setAmount] = useState('');
+  const [icoDetails, setIcoDetails] = useState<ICODetails | null>(null);
+  const [tokenAmount, setTokenAmount] = useState('');
+  const [usdtAmount, setUsdtAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [icoStatus, setIcoStatus] = useState<'upcoming' | 'active' | 'ended'>('upcoming');
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [estimatedGas, setEstimatedGas] = useState<string>('');
   const { address } = useAccount();
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
@@ -22,86 +29,128 @@ const ICODetail: React.FC = () => {
   useEffect(() => {
     const fetchICODetails = async () => {
       if (!id) return;
-      const { data, error } = await supabaseClient
-        .from('icos')
-        .select('*')
-        .eq('id', id)
-        .single();
+      try {
+        const [icoResponse, detailsResponse] = await Promise.all([
+          supabaseClient
+            .from('icos')
+            .select('*')
+            .eq('id', id)
+            .single(),
+          supabaseClient
+            .from('ico_details')
+            .select('*')
+            .eq('ico_id', id)
+            .single()
+        ]);
 
-      if (error) {
+        if (icoResponse.error) throw icoResponse.error;
+        if (detailsResponse.error) throw detailsResponse.error;
+
+        setIco(icoResponse.data as ICOData);
+        setIcoDetails(detailsResponse.data as ICODetails);
+        
+        // ICOのステータスを判定
+        const now = new Date().getTime();
+        const startTime = new Date(icoResponse.data.start_date).getTime();
+        const endTime = new Date(icoResponse.data.end_date).getTime();
+
+        if (now < startTime) {
+          setIcoStatus('upcoming');
+        } else if (now > endTime) {
+          setIcoStatus('ended');
+        } else {
+          setIcoStatus('active');
+        }
+      } catch (error) {
         console.error('Error fetching ICO details:', error);
-        return;
-      }
-
-      setIco(data as ICOData);
-      
-      // ICOのステータスを判定
-      const now = new Date().getTime();
-      const startTime = new Date(data.start_date).getTime();
-      const endTime = new Date(data.end_date).getTime();
-
-      if (now < startTime) {
-        setIcoStatus('upcoming');
-      } else if (now > endTime) {
-        setIcoStatus('ended');
-      } else {
-        setIcoStatus('active');
       }
     };
 
     fetchICODetails();
   }, [id]);
 
-  const { write: approveUSDT } = useContractWrite({
+  const { write: approveUSDT, data: approveData } = useContractWrite({
     address: import.meta.env.VITE_USDT_CONTRACT_ADDRESS as `0x${string}`,
     abi: ERC20_ABI,
     functionName: 'approve'
   });
 
-  const { write: purchaseTokens } = useContractWrite({
+  const { write: purchaseTokens, data: purchaseData } = useContractWrite({
     address: import.meta.env.VITE_ICO_CONTRACT_ADDRESS as `0x${string}`,
     abi: ICO_ABI,
     functionName: 'purchaseTokens'
   });
 
-  const handlePurchase = async () => {
-    if (!ico || !amount || !address) return;
-
-    setLoading(true);
-    try {
-      const { data: profile } = await supabaseClient
-        .from('profiles')
-        .select('wallet_address')
-        .eq('id', user?.id)
-        .single();
-
-      if (!profile?.wallet_address) {
-        navigate('/account');
-        return;
-      }
-
-      const usdtAmount = parseEther(amount);
-      await approveUSDT({
-        args: [import.meta.env.VITE_ICO_CONTRACT_ADDRESS, BigInt(usdtAmount)]
-      });
-
+  const { isLoading: isApprovePending } = useWaitForTransaction({
+    hash: approveData?.hash,
+    onSuccess: async () => {
+      const usdtAmountWei = parseEther(usdtAmount);
       await purchaseTokens({
-        args: [BigInt(ico.contract_id), BigInt(usdtAmount)]
+        args: [BigInt(ico!.contract_id), BigInt(usdtAmountWei)]
       });
+    }
+  });
 
-      await supabaseClient.from('purchases').insert([
-        {
-          user_id: user?.id,
-          ico_id: ico.id,
-          amount: BigInt(Math.floor(parseFloat(amount))),
-          price_per_token: BigInt(ico.price)
-        }
-      ]);
+  const { isLoading: isPurchasePending } = useWaitForTransaction({
+    hash: purchaseData?.hash,
+    onSuccess: async () => {
+      if (!ico || !user) return;
+      
+      await supabaseClient.from('purchases').insert([{
+        user_id: user.id,
+        ico_id: ico.id,
+        amount: parseFloat(tokenAmount),
+        price_per_token: ico.price,
+        tx_hash: purchaseData?.hash
+      }]);
 
       navigate('/purchase/complete');
+    }
+  });
+
+  const handleAmountChange = (value: string, type: 'token' | 'usdt') => {
+    if (!ico) return;
+    
+    if (type === 'token') {
+      setTokenAmount(value);
+      const calculatedUsdt = (parseFloat(value) * ico.price).toString();
+      setUsdtAmount(calculatedUsdt);
+    } else {
+      setUsdtAmount(value);
+      const calculatedTokens = (parseFloat(value) / ico.price).toString();
+      setTokenAmount(calculatedTokens);
+    }
+  };
+
+  const handlePurchase = async () => {
+    if (!ico || !tokenAmount || !address) return;
+
+    const { data: profile } = await supabaseClient
+      .from('profiles')
+      .select('wallet_address')
+      .eq('id', user?.id)
+      .single();
+
+    if (!profile?.wallet_address) {
+      navigate('/account');
+      return;
+    }
+
+    // 仮のガス見積もり値を設定
+    setEstimatedGas('0.002');
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmPurchase = async () => {
+    if (!ico || !usdtAmount) return;
+    setLoading(true);
+    try {
+      const usdtAmountWei = parseEther(usdtAmount);
+      await approveUSDT({
+        args: [import.meta.env.VITE_ICO_CONTRACT_ADDRESS, BigInt(usdtAmountWei)]
+      });
     } catch (error) {
       console.error('Purchase error:', error);
-    } finally {
       setLoading(false);
     }
   };
@@ -116,7 +165,7 @@ const ICODetail: React.FC = () => {
     if (!address) {
       return 'ウォレットを接続してください';
     }
-    if (!amount) {
+    if (!tokenAmount) {
       return '数量を入力してください';
     }
     return '購入する';
@@ -145,7 +194,7 @@ const ICODetail: React.FC = () => {
     }
   };
 
-  if (!ico) {
+  if (!ico || !icoDetails) {
     return (
       <div className="flex justify-center items-center h-screen">
         <div className="animate-spin h-8 w-8 border-4 border-primary-900 border-t-transparent rounded-full"></div>
@@ -156,11 +205,11 @@ const ICODetail: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto pb-16">
       {/* ヘッダー画像 */}
-      <div className="relative h-64 md:h-80 mb-8 rounded-xl overflow-hidden">
-        {ico.image_url && (
+      <div className="relative h-64 md:h-96 mb-8 rounded-xl overflow-hidden">
+        {ico.header_image_url && (
           <>
             <img
-              src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/ico-images/${ico.image_url}`}
+              src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/ico-images/${ico.header_image_url}`}
               alt={`${ico.name} header`}
               className="w-full h-full object-cover"
             />
@@ -171,17 +220,17 @@ const ICODetail: React.FC = () => {
         {/* プロジェクトアイコンとタイトル */}
         <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
           <div className="flex items-center space-x-4">
-            <div className="w-20 h-20 rounded-full overflow-hidden bg-white shadow-lg">
-              {ico.image_url && (
+            <div className="w-24 h-24 rounded-full overflow-hidden bg-white shadow-lg">
+              {ico.icon_image_url && (
                 <img
-                  src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/ico-images/${ico.image_url}`}
+                  src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/ico-images/${ico.icon_image_url}`}
                   alt={`${ico.name} icon`}
                   className="w-full h-full object-cover"
                 />
               )}
             </div>
             <div>
-              <h1 className="text-3xl font-bold">{ico.name}</h1>
+              <h1 className="text-4xl font-bold">{ico.name}</h1>
               <div className="flex items-center space-x-2 mt-2">
                 <span className="text-sm font-medium bg-white/20 px-3 py-1 rounded-full">
                   {ico.symbol}
@@ -203,11 +252,17 @@ const ICODetail: React.FC = () => {
           >
             <h2 className="text-xl font-bold text-primary-900 mb-4">プロジェクト詳細</h2>
             <div className="prose prose-primary max-w-none">
-              {ico.description.split('\n').map((paragraph, index) => (
-                <p key={index} className="text-primary-700 leading-relaxed mb-4">
-                  {paragraph}
-                </p>
-              ))}
+              <ReactMarkdown>{icoDetails.markdown_content}</ReactMarkdown>
+            </div>
+
+            <div className="mt-6">
+              <SocialLinks
+                twitter={icoDetails.twitter_url}
+                discord={icoDetails.discord_url}
+                instagram={icoDetails.instagram_url}
+                website={icoDetails.website_url}
+                whitepaper={icoDetails.whitepaper_url}
+              />
             </div>
           </motion.div>
 
@@ -221,7 +276,9 @@ const ICODetail: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-primary-600">総供給量</p>
-                <p className="font-medium text-primary-900">{ico.total_supply.toLocaleString()} {ico.symbol}</p>
+                <p className="font-medium text-primary-900">
+                  {ico.total_supply.toLocaleString()} {ico.symbol}
+                </p>
               </div>
               <div>
                 <p className="text-primary-600">価格</p>
@@ -229,11 +286,27 @@ const ICODetail: React.FC = () => {
               </div>
               <div>
                 <p className="text-primary-600">開始日</p>
-                <p className="font-medium text-primary-900">{new Date(ico.start_date).toLocaleDateString()}</p>
+                <p className="font-medium text-primary-900">
+                  {new Date(ico.start_date).toLocaleDateString()}
+                </p>
               </div>
               <div>
                 <p className="text-primary-600">終了日</p>
-                <p className="font-medium text-primary-900">{new Date(ico.end_date).toLocaleDateString()}</p>
+                <p className="font-medium text-primary-900">
+                  {new Date(ico.end_date).toLocaleDateString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-primary-600">最小購入額</p>
+                <p className="font-medium text-primary-900">
+                  {ico.min_purchase} USDT
+                </p>
+              </div>
+              <div>
+                <p className="text-primary-600">最大購入額</p>
+                <p className="font-medium text-primary-900">
+                  {ico.max_purchase} USDT
+                </p>
               </div>
             </div>
           </motion.div>
@@ -253,35 +326,46 @@ const ICODetail: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-primary-700 mb-2">
-                  購入数量
+                  トークン数量
                 </label>
                 <input
                   type="number"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  value={tokenAmount}
+                  onChange={(e) => handleAmountChange(e.target.value, 'token')}
                   className="input"
                   placeholder="0"
                   disabled={!address || loading || icoStatus !== 'active'}
                 />
-                {amount && (
-                  <p className="mt-2 text-sm text-primary-600">
-                    合計: {(parseFloat(amount) * (ico?.price || 0)).toFixed(2)} USDT
-                  </p>
-                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-primary-700 mb-2">
+                  支払いUSDT
+                </label>
+                <input
+                  type="number"
+                  value={usdtAmount}
+                  onChange={(e) => handleAmountChange(e.target.value, 'usdt')}
+                  className="input"
+                  placeholder="0"
+                  disabled={!address || loading || icoStatus !== 'active'}
+                />
               </div>
 
               <button
                 onClick={handlePurchase}
-                disabled={!address || !amount || loading || icoStatus !== 'active'}
+                disabled={!address || !tokenAmount || loading || icoStatus !== 'active'}
                 className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loading ? (
+                {loading || isApprovePending || isPurchasePending ? (
                   <span className="flex items-center justify-center">
                     <svg className="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    処理中...
+                    {isApprovePending ? 'USDT承認中...' :
+                     isPurchasePending ? '購入処理中...' :
+                     '処理中...'}
                   </span>
                 ) : (
                   getButtonText()
@@ -304,6 +388,17 @@ const ICODetail: React.FC = () => {
           </div>
         </motion.div>
       </div>
+
+      <PurchaseConfirmModal
+        isOpen={showConfirmModal}
+        onClose={() => setShowConfirmModal(false)}
+        onConfirm={handleConfirmPurchase}
+        tokenAmount={`${tokenAmount} ${ico.symbol}`}
+        usdtAmount={`${usdtAmount} USDT`}
+        tokenSymbol={ico.symbol}
+        estimatedGas={estimatedGas}
+        isLoading={isApprovePending || isPurchasePending}
+      />
     </div>
   );
 };

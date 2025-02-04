@@ -5,6 +5,9 @@ import supabaseClient from '../lib/supabaseClient';
 import { AuthContext } from '../context/AuthContext';
 import { Purchase } from '../types';
 import StyledConnectButton from '../components/StyledConnectButton';
+import Pagination from '../components/Pagination';
+
+const ITEMS_PER_PAGE = 10;
 
 const AccountSettings: React.FC = () => {
   const [username, setUsername] = useState('');
@@ -14,13 +17,17 @@ const AccountSettings: React.FC = () => {
   const [updateSuccess, setUpdateSuccess] = useState(false);
   const { user } = useContext(AuthContext);
   const { address } = useAccount();
+  
+  // ページネーション用のstate
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalPurchases, setTotalPurchases] = useState(0);
 
   useEffect(() => {
     const fetchUserData = async () => {
       if (!user) return;
       setLoading(true);
       try {
-        // プロフィール取得
         const { data: profile } = await supabaseClient
           .from('profiles')
           .select('*')
@@ -37,10 +44,27 @@ const AccountSettings: React.FC = () => {
       }
     };
 
+    fetchUserData();
+  }, [user]);
+
+  useEffect(() => {
     const fetchPurchaseHistory = async () => {
       if (!user) return;
       setPurchasesLoading(true);
       try {
+        // まず総数を取得
+        const { count, error: countError } = await supabaseClient
+          .from('purchases')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id);
+
+        if (countError) throw countError;
+        
+        const total = count || 0;
+        setTotalPurchases(total);
+        setTotalPages(Math.ceil(total / ITEMS_PER_PAGE));
+
+        // ページネーションを適用してデータを取得
         const { data, error } = await supabaseClient
           .from('purchases')
           .select(`
@@ -49,11 +73,12 @@ const AccountSettings: React.FC = () => {
               name,
               symbol,
               price,
-              image_url
+              icon_image_url
             )
           `)
           .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .range((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE - 1);
 
         if (error) throw error;
         setPurchases(data || []);
@@ -64,9 +89,8 @@ const AccountSettings: React.FC = () => {
       }
     };
 
-    fetchUserData();
     fetchPurchaseHistory();
-  }, [user]);
+  }, [user, currentPage]);
 
   const handleUpdateProfile = async () => {
     if (!user || !address) return;
@@ -91,6 +115,11 @@ const AccountSettings: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
@@ -169,7 +198,14 @@ const AccountSettings: React.FC = () => {
             transition={{ delay: 0.1 }}
             className="card p-6"
           >
-            <h2 className="text-xl font-bold text-primary-900 mb-6">購入履歴</h2>
+            <h2 className="text-xl font-bold text-primary-900 mb-6">
+              購入履歴
+              {totalPurchases > 0 && (
+                <span className="ml-2 text-sm font-medium text-primary-600">
+                  全{totalPurchases}件
+                </span>
+              )}
+            </h2>
             
             <AnimatePresence>
               {purchasesLoading ? (
@@ -210,49 +246,61 @@ const AccountSettings: React.FC = () => {
                   <p className="text-primary-600">購入履歴はありません</p>
                 </motion.div>
               ) : (
-                <div className="space-y-4">
-                  {purchases.map((purchase, index) => (
-                    <motion.div
-                      key={purchase.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                      className="card p-4 border border-primary-200 hover:border-primary-300 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        {purchase.icos.image_url && (
-                          <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
-                            <img
-                              src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/ico-images/${purchase.icos.image_url}`}
-                              alt={purchase.icos.name}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                            <div>
-                              <h3 className="font-medium text-primary-900 truncate">
-                                {purchase.icos.name}
-                              </h3>
-                              <p className="text-sm text-primary-600">
-                                {purchase.amount.toString()} {purchase.icos.symbol}
-                              </p>
+                <>
+                  <div className="space-y-4">
+                    {purchases.map((purchase, index) => (
+                      <motion.div
+                        key={purchase.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="card p-4 border border-primary-200 hover:border-primary-300 transition-colors"
+                      >
+                        <div className="flex items-center gap-4">
+                          {purchase.icos.icon_image_url && (
+                            <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
+                              <img
+                                src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/ico-images/${purchase.icos.icon_image_url}`}
+                                alt={purchase.icos.name}
+                                className="w-full h-full object-cover"
+                              />
                             </div>
-                            <div className="text-right">
-                              <p className="font-medium text-primary-900">
-                                {(Number(purchase.amount) * purchase.icos.price).toFixed(2)} USDT
-                              </p>
-                              <p className="text-sm text-primary-500">
-                                {new Date(purchase.created_at).toLocaleDateString()}
-                              </p>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                              <div>
+                                <h3 className="font-medium text-primary-900 truncate">
+                                  {purchase.icos.name}
+                                </h3>
+                                <p className="text-sm text-primary-600">
+                                  {purchase.amount.toString()} {purchase.icos.symbol}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-medium text-primary-900">
+                                  {(Number(purchase.amount) * purchase.icos.price).toFixed(2)} USDT
+                                </p>
+                                <p className="text-sm text-primary-500">
+                                  {new Date(purchase.created_at).toLocaleDateString()}
+                                </p>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  {totalPages > 1 && (
+                    <div className="mt-8">
+                      <Pagination
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        onPageChange={handlePageChange}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </AnimatePresence>
           </motion.div>

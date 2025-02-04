@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import supabaseClient from './lib/supabaseClient';
 import { AuthContext } from './context/AuthContext';
 import AnimatedRoutes from './components/AnimatedRoutes';
+import LogoutConfirmModal from './components/LogoutConfirmModal';
 import '@rainbow-me/rainbowkit/styles.css';
 import './index.css';
 
@@ -37,13 +38,42 @@ const config = createConfig({
   publicClient,
 });
 
+// SVGアイコンコンポーネント
+const DashboardIcon = () => (
+  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" 
+      d="M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+  </svg>
+);
+
+const SettingsIcon = () => (
+  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" 
+      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+);
+
+const AdminIcon = () => (
+  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" 
+      d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+  </svg>
+);
+
+const LogoutIcon = () => (
+  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" 
+      d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+  </svg>
+);
+
 const AppContent: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [isHoveringToggle, setIsHoveringToggle] = useState(false);
-  const [shouldFadeToggle, setShouldFadeToggle] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
@@ -56,17 +86,9 @@ const AppContent: React.FC = () => {
       }
     };
 
-    handleResize(); // 初期化時に実行
+    handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setShouldFadeToggle(true);
-    }, 3000); // 3秒後に透明度を下げる
-
-    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -86,11 +108,17 @@ const AppContent: React.FC = () => {
   const checkAdminStatus = async (userId: string) => {
     const { data } = await supabaseClient
       .from('admins')
-      .select('*', { count: 'exact' })
+      .select('*')
       .eq('user_id', userId)
       .maybeSingle();
     
     setIsAdmin(!!data);
+  };
+
+  const handleLogout = async () => {
+    await supabaseClient.auth.signOut();
+    setIsLogoutModalOpen(false);
+    setSidebarOpen(false);
   };
 
   const sidebarContainerVariants = {
@@ -120,22 +148,15 @@ const AppContent: React.FC = () => {
     <AuthContext.Provider value={{ user, setUser }}>
       {user ? (
         <div className="min-h-screen bg-primary-50">
-          {/* サイドバーとトグルボタンのコンテナ */}
           <motion.div
             initial={sidebarContainerVariants.closed}
             animate={sidebarOpen ? "open" : "closed"}
             variants={sidebarContainerVariants}
             className="fixed left-0 top-0 bottom-0 z-40"
           >
-            {/* トグルボタン */}
             <motion.button
               onClick={toggleSidebar}
-              onMouseEnter={() => setIsHoveringToggle(true)}
-              onMouseLeave={() => setIsHoveringToggle(false)}
-              className="absolute -right-10 top-4 p-2 rounded-lg bg-white shadow-lg transition-opacity duration-300"
-              animate={{ 
-                opacity: (!shouldFadeToggle || isHoveringToggle || !sidebarOpen) ? 1 : 0.3
-              }}
+              className="absolute -right-10 top-4 p-2 rounded-lg bg-white shadow-lg"
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
             >
@@ -153,9 +174,8 @@ const AppContent: React.FC = () => {
               </svg>
             </motion.button>
 
-            {/* サイドバー */}
-            <div className="w-64 h-full bg-white shadow-lg overflow-y-auto">
-              <div className="p-6">
+            <div className="w-64 h-full bg-white shadow-lg flex flex-col">
+              <div className="flex-1 p-6">
                 <div className="mb-8">
                   <h1 className="text-2xl font-bold text-primary-900">ICO Platform</h1>
                 </div>
@@ -163,45 +183,44 @@ const AppContent: React.FC = () => {
                   <Link
                     to="/dashboard"
                     onClick={() => isMobile && setSidebarOpen(false)}
-                    className="flex items-center space-x-2 nav-link w-full transition-transform hover:translate-x-1"
+                    className="flex items-center space-x-3 nav-link w-full transition-transform hover:translate-x-1"
                   >
-                    <span>📊</span>
+                    <DashboardIcon />
                     <span>ダッシュボード</span>
                   </Link>
                   <Link
                     to="/account"
                     onClick={() => isMobile && setSidebarOpen(false)}
-                    className="flex items-center space-x-2 nav-link w-full transition-transform hover:translate-x-1"
+                    className="flex items-center space-x-3 nav-link w-full transition-transform hover:translate-x-1"
                   >
-                    <span>⚙️</span>
+                    <SettingsIcon />
                     <span>アカウント設定</span>
                   </Link>
                   {isAdmin && (
                     <Link
                       to="/admin"
                       onClick={() => isMobile && setSidebarOpen(false)}
-                      className="flex items-center space-x-2 nav-link w-full transition-transform hover:translate-x-1"
+                      className="flex items-center space-x-3 nav-link w-full transition-transform hover:translate-x-1"
                     >
-                      <span>👑</span>
+                      <AdminIcon />
                       <span>管理者ページ</span>
                     </Link>
                   )}
-                  <button
-                    onClick={() => {
-                      supabaseClient.auth.signOut();
-                      isMobile && setSidebarOpen(false);
-                    }}
-                    className="flex items-center space-x-2 w-full py-2 px-3 rounded-lg text-red-600 hover:bg-red-50 transition-all duration-200 hover:translate-x-1"
-                  >
-                    <span>🚪</span>
-                    <span>ログアウト</span>
-                  </button>
                 </div>
+              </div>
+              
+              <div className="p-6 border-t border-primary-100">
+                <button
+                  onClick={() => setIsLogoutModalOpen(true)}
+                  className="flex items-center space-x-3 w-full py-2 px-3 rounded-lg text-red-600 hover:bg-red-50 transition-all duration-200 hover:translate-x-1"
+                >
+                  <LogoutIcon />
+                  <span>ログアウト</span>
+                </button>
               </div>
             </div>
           </motion.div>
 
-          {/* オーバーレイ（モバイル時のみ表示） */}
           <AnimatePresence>
             {sidebarOpen && isMobile && (
               <motion.div
@@ -214,7 +233,6 @@ const AppContent: React.FC = () => {
             )}
           </AnimatePresence>
 
-          {/* メインコンテンツ */}
           <motion.main
             initial={false}
             animate={{
@@ -228,6 +246,12 @@ const AppContent: React.FC = () => {
               <AnimatedRoutes isAuthenticated={!!user} isAdmin={isAdmin} />
             </div>
           </motion.main>
+
+          <LogoutConfirmModal
+            isOpen={isLogoutModalOpen}
+            onClose={() => setIsLogoutModalOpen(false)}
+            onConfirm={handleLogout}
+          />
         </div>
       ) : (
         <AnimatedRoutes isAuthenticated={false} isAdmin={false} />

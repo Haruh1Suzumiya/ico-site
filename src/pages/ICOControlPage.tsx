@@ -2,26 +2,85 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import supabaseClient from '../lib/supabaseClient';
 import { ICOData } from '../types';
+import Pagination from '../components/Pagination';
+
+const ITEMS_PER_PAGE = 10;
 
 const ICOControlPage: React.FC = () => {
   const [icos, setIcos] = useState<ICOData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'active' | 'upcoming' | 'ended'>('all');
+  
+  // ページネーション用のstate
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalIcos, setTotalIcos] = useState(0);
 
   useEffect(() => {
     fetchICOs();
-  }, []);
+  }, [currentPage, selectedFilter]);
 
   const fetchICOs = async () => {
     setLoading(true);
     setError('');
     try {
-      const { data, error } = await supabaseClient
+      // まず現在のフィルタに基づいて総数を取得
+      let query = supabaseClient.from('icos').select('*', { count: 'exact' });
+
+      // フィルタリング条件の適用
+      if (selectedFilter !== 'all') {
+        const now = new Date().toISOString();
+        switch (selectedFilter) {
+          case 'active':
+            query = query
+              .lt('start_date', now)
+              .gt('end_date', now);
+            break;
+          case 'upcoming':
+            query = query
+              .gt('start_date', now);
+            break;
+          case 'ended':
+            query = query
+              .lt('end_date', now);
+            break;
+        }
+      }
+
+      const { count: totalCount } = await query;
+      const total = totalCount || 0;
+      setTotalIcos(total);
+      setTotalPages(Math.ceil(total / ITEMS_PER_PAGE));
+
+      // 実際のデータ取得
+      query = supabaseClient
         .from('icos')
         .select('*')
-        .order('created_at', { ascending: false });
-      
+        .order('created_at', { ascending: false })
+        .range((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE - 1);
+
+      // 同じフィルタリング条件を適用
+      if (selectedFilter !== 'all') {
+        const now = new Date().toISOString();
+        switch (selectedFilter) {
+          case 'active':
+            query = query
+              .lt('start_date', now)
+              .gt('end_date', now);
+            break;
+          case 'upcoming':
+            query = query
+              .gt('start_date', now);
+            break;
+          case 'ended':
+            query = query
+              .lt('end_date', now);
+            break;
+        }
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       setIcos(data || []);
     } catch (err: any) {
@@ -55,10 +114,15 @@ const ICOControlPage: React.FC = () => {
     return 'active';
   };
 
-  const filteredICOs = icos.filter(ico => {
-    if (selectedFilter === 'all') return true;
-    return getICOStatus(ico) === selectedFilter;
-  });
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleFilterChange = (filter: typeof selectedFilter) => {
+    setSelectedFilter(filter);
+    setCurrentPage(1); // フィルター変更時は1ページ目に戻る
+  };
 
   const getStatusColor = (status: 'active' | 'upcoming' | 'ended') => {
     switch (status) {
@@ -70,8 +134,10 @@ const ICOControlPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="p-8 text-center">
-        <div className="animate-spin h-8 w-8 border-4 border-primary-900 border-t-transparent rounded-full mx-auto"></div>
+      <div className="p-8">
+        <div className="flex justify-center items-center">
+          <div className="animate-spin h-8 w-8 border-4 border-primary-900 border-t-transparent rounded-full"></div>
+        </div>
       </div>
     );
   }
@@ -93,7 +159,7 @@ const ICOControlPage: React.FC = () => {
           {(['all', 'active', 'upcoming', 'ended'] as const).map((filter) => (
             <button
               key={filter}
-              onClick={() => setSelectedFilter(filter)}
+              onClick={() => handleFilterChange(filter)}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                 selectedFilter === filter
                   ? 'bg-primary-900 text-white'
@@ -108,8 +174,14 @@ const ICOControlPage: React.FC = () => {
         </div>
       </div>
 
+      <div className="mb-4">
+        <p className="text-primary-600">
+          全{totalIcos}件 ({currentPage}/{totalPages}ページ)
+        </p>
+      </div>
+
       <AnimatePresence mode="popLayout">
-        {filteredICOs.length === 0 ? (
+        {icos.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -120,7 +192,7 @@ const ICOControlPage: React.FC = () => {
           </motion.div>
         ) : (
           <div className="space-y-4">
-            {filteredICOs.map((ico) => {
+            {icos.map((ico) => {
               const status = getICOStatus(ico);
               return (
                 <motion.div
@@ -188,6 +260,16 @@ const ICOControlPage: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      {totalPages > 1 && (
+        <div className="mt-8">
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+          />
+        </div>
+      )}
     </div>
   );
 };
