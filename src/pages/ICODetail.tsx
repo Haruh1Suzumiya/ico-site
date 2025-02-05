@@ -11,6 +11,7 @@ import StyledConnectButton from '../components/StyledConnectButton';
 import PurchaseConfirmModal from '../components/PurchaseConfirmModal';
 import SocialLinks from '../components/SocialLinks';
 import { AuthContext } from '../context/AuthContext';
+import { getJSTNow, formatJSTDateTime } from '../utils/date';
 
 const ICODetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -49,10 +50,15 @@ const ICODetail: React.FC = () => {
         setIco(icoResponse.data as ICOData);
         setIcoDetails(detailsResponse.data as ICODetails);
         
-        // ICOのステータスを判定
-        const now = new Date().getTime();
-        const startTime = new Date(icoResponse.data.start_date).getTime();
-        const endTime = new Date(icoResponse.data.end_date).getTime();
+        // ICOのステータスを判定（JST基準）
+        const now = getJSTNow();
+        // 日時文字列を直接Date型に変換（データベースにはJST時間が保存されている前提）
+        const startTime = new Date(icoResponse.data.start_date);
+        const endTime = new Date(icoResponse.data.end_date);
+
+        console.log('Current time (JST):', now);
+        console.log('Start time:', startTime);
+        console.log('End time:', endTime);
 
         if (now < startTime) {
           setIcoStatus('upcoming');
@@ -136,7 +142,6 @@ const ICODetail: React.FC = () => {
       return;
     }
 
-    // 仮のガス見積もり値を設定
     setEstimatedGas('0.002');
     setShowConfirmModal(true);
   };
@@ -287,13 +292,13 @@ const ICODetail: React.FC = () => {
               <div>
                 <p className="text-primary-600">開始日</p>
                 <p className="font-medium text-primary-900">
-                  {new Date(ico.start_date).toLocaleDateString()}
+                  {formatJSTDateTime(ico.start_date)}
                 </p>
               </div>
               <div>
                 <p className="text-primary-600">終了日</p>
                 <p className="font-medium text-primary-900">
-                  {new Date(ico.end_date).toLocaleDateString()}
+                  {formatJSTDateTime(ico.end_date)}
                 </p>
               </div>
               <div>
@@ -361,7 +366,7 @@ const ICODetail: React.FC = () => {
                   <span className="flex items-center justify-center">
                     <svg className="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      <path className="opacity-75" fill="currentColor" d="M412a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                     {isApprovePending ? 'USDT承認中...' :
                      isPurchasePending ? '購入処理中...' :

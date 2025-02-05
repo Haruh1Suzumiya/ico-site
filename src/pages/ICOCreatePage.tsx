@@ -6,6 +6,7 @@ import supabaseClient from '../lib/supabaseClient';
 import { ICO_ABI } from '../contracts/abis';
 import MarkdownEditor from '../components/MarkdownEditor';
 import SocialLinks from '../components/SocialLinks';
+import { toJSTString, convertToUTC } from '../utils/date';
 
 interface ICOFormData {
   name: string;
@@ -56,14 +57,6 @@ const DateSelector: React.FC<DateSelectorProps> = ({
   label,
   inheritDate 
 }) => {
-  // JSTベースの日付処理のための関数
-  const toJSTString = (date: Date) => {
-    return new Date(date.getTime() - (date.getTimezoneOffset() * 60000))
-      .toISOString()
-      .slice(0, 16); // YYYY-MM-DDTHH:mm形式
-  };
-
-  // 初期値の設定を useState の初期化関数で行う
   const [localValue, setLocalValue] = useState<string>(() => {
     return inheritDate ? toJSTString(new Date(inheritDate)) : value || toJSTString(new Date());
   });
@@ -262,25 +255,25 @@ const ICOCreatePage: React.FC = () => {
       try {
         // Save to database with contract_id
         const { data: icoData, error: icoError } = await supabaseClient
-        .from('icos')
-        .insert([{
-          name: formData.name,
-          symbol: formData.symbol,
-          description: formData.description,
-          price: parseFloat(formData.price),
-          // タイムゾーンを指定して保存
-          start_date: new Date(formData.startDate).toISOString().replace('Z', '+09:00'),
-          end_date: new Date(formData.endDate).toISOString().replace('Z', '+09:00'),
-          total_supply: parseFloat(formData.totalSupply),
-          min_purchase: parseFloat(formData.minPurchase),
-          max_purchase: parseFloat(formData.maxPurchase),
-          header_image_url: headerImageUrl,
-          icon_image_url: iconImageUrl,
-          is_active: true,
-          contract_id: Number(icoCount)
-        }])
-        .select()
-        .single();
+          .from('icos')
+          .insert([{
+            name: formData.name,
+            symbol: formData.symbol,
+            description: formData.description,
+            price: parseFloat(formData.price),
+            start_date: new Date(formData.startDate).toISOString(),
+            end_date: new Date(formData.endDate).toISOString(),
+            total_supply: parseFloat(formData.totalSupply),
+            min_purchase: parseFloat(formData.minPurchase),
+            max_purchase: parseFloat(formData.maxPurchase),
+            header_image_url: headerImageUrl,
+            icon_image_url: iconImageUrl,
+            is_active: true,
+            is_visible: true,
+            contract_id: Number(icoCount)
+          }])
+          .select()
+          .single();
 
         if (icoError) throw icoError;
 
@@ -305,7 +298,7 @@ const ICOCreatePage: React.FC = () => {
           .insert(
             vestingSchedules.map(schedule => ({
               ico_id: icoData.id,
-              release_date: schedule.releaseDate,
+              release_date: new Date(schedule.releaseDate).toISOString(),
               release_percent: parseFloat(schedule.percentage)
             }))
           );
@@ -453,7 +446,6 @@ const ICOCreatePage: React.FC = () => {
     setVestingSchedules(vestingSchedules.filter((_, i) => i !== index));
   };
 
-  // validateStep function
   const validateStep = (currentStep: number): boolean => {
     try {
       switch (currentStep) {
@@ -559,7 +551,7 @@ const ICOCreatePage: React.FC = () => {
         throw new Error('必須項目が入力されていません');
       }
 
-      // Convert dates to UNIX timestamp
+      // Convert JST dates to UNIX timestamp for smart contract
       const startTime = BigInt(Math.floor(new Date(formData.startDate).getTime() / 1000));
       const endTime = BigInt(Math.floor(new Date(formData.endDate).getTime() / 1000));
 
@@ -618,7 +610,6 @@ const ICOCreatePage: React.FC = () => {
 
     } catch (err: any) {
       console.error('ICO creation error:', err);
-      // MetaMask承認拒否のエラーを特定
       if (err.message.includes('User rejected') || 
           err.message.includes('user rejected') ||
           err.message.includes('User denied')) {
@@ -949,62 +940,62 @@ const ICOCreatePage: React.FC = () => {
                           min="0"
                           max="100"
                           step="0.01"
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-
-              {(error || txError) && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="bg-red-50 border-l-4 border-red-500 p-4 rounded"
-                >
-                  <p className="text-red-700">{error || txError}</p>
-                </motion.div>
+                          />
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+    
+                  {(error || txError) && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="bg-red-50 border-l-4 border-red-500 p-4 rounded"
+                    >
+                      <p className="text-red-700">{error || txError}</p>
+                    </motion.div>
+                  )}
+                </div>
               )}
-            </div>
-          )}
-        </motion.div>
-      </AnimatePresence>
-
-      {/* アクションボタン */}
-      <div className="flex justify-between mt-8">
-        {step > 1 && (
-          <button
-            type="button"
-            onClick={() => setStep(step - 1)}
-            className="btn-secondary"
-          >
-            戻る
-          </button>
-        )}
-        
-        <button
-          type="button"
-          onClick={() => step === 4 ? handleSubmit() : setStep(step + 1)}
-          disabled={!validateStep(step) || loading || isWaitingForTx}
-          className={`btn-primary ml-auto ${(loading || isWaitingForTx) ? 'opacity-50 cursor-not-allowed' : ''}`}
-        >
-          {loading || isWaitingForTx ? (
-            <span className="flex items-center space-x-2">
-              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              <span>{isWaitingForTx ? 'トランザクション処理中...' : '処理中...'}</span>
-            </span>
-          ) : step === 4 ? (
-            'ICOを作成'
-          ) : (
-            '次へ'
-          )}
-        </button>
-      </div>
-    </div>
-  );
-};
-
-export default ICOCreatePage;
+            </motion.div>
+          </AnimatePresence>
+    
+          {/* アクションボタン */}
+          <div className="flex justify-between mt-8">
+            {step > 1 && (
+              <button
+                type="button"
+                onClick={() => setStep(step - 1)}
+                className="btn-secondary"
+              >
+                戻る
+              </button>
+            )}
+            
+            <button
+              type="button"
+              onClick={() => step === 4 ? handleSubmit() : setStep(step + 1)}
+              disabled={!validateStep(step) || loading || isWaitingForTx}
+              className={`btn-primary ml-auto ${(loading || isWaitingForTx) ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {loading || isWaitingForTx ? (
+                <span className="flex items-center space-x-2">
+                  <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  <span>{isWaitingForTx ? 'トランザクション処理中...' : '処理中...'}</span>
+                </span>
+              ) : step === 4 ? (
+                'ICOを作成'
+              ) : (
+                '次へ'
+              )}
+            </button>
+          </div>
+        </div>
+      );
+    };
+    
+    export default ICOCreatePage;

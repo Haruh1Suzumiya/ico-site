@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import supabaseClient from '../lib/supabaseClient';
 import { ICOData } from '../types';
 import StyledConnectButton from '../components/StyledConnectButton';
+import { getJSTNow, formatJSTDateTime } from '../utils/date';
 
 const Dashboard: React.FC = () => {
   const [icos, setIcos] = useState<ICOData[]>([]);
@@ -31,13 +32,11 @@ const Dashboard: React.FC = () => {
     fetchICOs();
   }, []);
 
-  const getCurrentTimestamp = () => new Date().getTime();
-
   const filterICOs = (status: 'active' | 'upcoming' | 'ended') => {
-    const now = getCurrentTimestamp();
+    const now = getJSTNow();
     return icos.filter(ico => {
-      const startTime = new Date(ico.start_date).getTime();
-      const endTime = new Date(ico.end_date).getTime();
+      const startTime = new Date(ico.start_date);
+      const endTime = new Date(ico.end_date);
       
       switch (status) {
         case 'active':
@@ -70,9 +69,9 @@ const Dashboard: React.FC = () => {
   };
 
   const getStatusBadge = (ico: ICOData) => {
-    const now = getCurrentTimestamp();
-    const startTime = new Date(ico.start_date).getTime();
-    const endTime = new Date(ico.end_date).getTime();
+    const now = getJSTNow();
+    const startTime = new Date(ico.start_date);
+    const endTime = new Date(ico.end_date);
 
     if (now < startTime) {
       return (
@@ -92,21 +91,6 @@ const Dashboard: React.FC = () => {
         実施中
       </span>
     );
-  };
-
-  const formatDateTime = (dateString: string) => {
-    // タイムゾーン情報が含まれていない場合は、JSTとして解釈
-    const date = dateString.includes('Z') 
-      ? new Date(new Date(dateString).getTime() + 9 * 60 * 60 * 1000)
-      : new Date(dateString);
-  
-    return date.toLocaleString('ja-JP', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
   };
 
   if (loading) {
@@ -184,7 +168,7 @@ const Dashboard: React.FC = () => {
             <div className="flex justify-between items-center text-sm">
               <span className="text-primary-600">期間</span>
               <span className="font-medium text-primary-900">
-                {formatDateTime(ico.start_date)} - {formatDateTime(ico.end_date)}
+                {formatJSTDateTime(ico.start_date)} - {formatJSTDateTime(ico.end_date)}
               </span>
             </div>
           </div>
