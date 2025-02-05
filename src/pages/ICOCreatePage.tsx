@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useContractWrite, useContractRead, useWaitForTransaction } from 'wagmi';
 import { parseEther } from 'viem';
@@ -37,50 +37,171 @@ interface DateSelectorProps {
   onChange: (value: string) => void;
   minDate?: Date;
   label: string;
+  inheritDate?: string;
 }
 
-const DateSelector: React.FC<DateSelectorProps> = ({ value, onChange, minDate, label }) => {
-  const [date, setDate] = useState(() => value.split('T')[0] || '');
-  const [time, setTime] = useState(() => value.split('T')[1] || '12:00:00');
+interface ImageUploaderProps {
+  previewUrl: string | null;
+  onChange: (file: File) => void;
+  onRemove: () => void;
+  label: string;
+  className?: string;
+  aspectRatio?: 'square' | 'banner';
+}
 
-  const handleDateChange = (newDate: string) => {
-    setDate(newDate);
-    if (newDate && time) {
-      onChange(`${newDate}T${time}`);
-    }
+const DateSelector: React.FC<DateSelectorProps> = ({ 
+  value, 
+  onChange, 
+  minDate, 
+  label,
+  inheritDate 
+}) => {
+  // JSTベースの日付処理のための関数
+  const toJSTString = (date: Date) => {
+    return new Date(date.getTime() - (date.getTimezoneOffset() * 60000))
+      .toISOString()
+      .slice(0, 16); // YYYY-MM-DDTHH:mm形式
   };
 
-  const handleTimeChange = (newTime: string) => {
-    setTime(newTime);
-    if (date && newTime) {
-      onChange(`${date}T${newTime}`);
+  // 初期値の設定を useState の初期化関数で行う
+  const [localValue, setLocalValue] = useState<string>(() => {
+    return inheritDate ? toJSTString(new Date(inheritDate)) : value || toJSTString(new Date());
+  });
+
+  useEffect(() => {
+    if (inheritDate) {
+      const inheritedDate = new Date(inheritDate);
+      inheritedDate.setHours(inheritedDate.getHours() + 1); // 終了時刻から1時間後
+      const newValue = toJSTString(inheritedDate);
+      if (newValue !== localValue) {
+        setLocalValue(newValue);
+        onChange(newValue);
+      }
     }
+  }, [inheritDate, localValue, onChange]);
+
+  const handleDateTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    setLocalValue(newValue);
+    onChange(newValue);
   };
 
-  const today = new Date();
-  const minDateString = minDate ? minDate.toISOString().split('T')[0] : today.toISOString().split('T')[0];
+  const minDateString = minDate 
+    ? toJSTString(minDate)
+    : toJSTString(new Date());
 
   return (
     <div className="space-y-2">
       <label className="block text-sm font-medium text-primary-700">
         {label}
       </label>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="relative">
         <input
-          type="date"
-          value={date}
+          type="datetime-local"
+          value={localValue}
           min={minDateString}
-          onChange={(e) => handleDateChange(e.target.value)}
-          className="input"
+          onChange={handleDateTimeChange}
+          className="input w-full"
         />
-        <input
-          type="time"
-          value={time}
-          onChange={(e) => handleTimeChange(e.target.value)}
-          className="input"
-          step="1"
-        />
+        <div className="text-xs text-primary-500 mt-1">
+          ※日本時間（JST）で入力してください
+        </div>
       </div>
+    </div>
+  );
+};
+
+const ImageUploader: React.FC<ImageUploaderProps> = ({
+  previewUrl,
+  onChange,
+  onRemove,
+  label,
+  className = '',
+  aspectRatio = 'square'
+}) => {
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0 && files[0].type.startsWith('image/')) {
+      onChange(files[0]);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      onChange(files[0]);
+    }
+  };
+
+  return (
+    <div className={className}>
+      <label className="block text-sm font-medium text-primary-700 mb-2">
+        {label}
+      </label>
+      {previewUrl ? (
+        <div className="relative">
+          <div className={`relative rounded-lg overflow-hidden ${
+            aspectRatio === 'banner' ? 'aspect-[16/5]' : 'aspect-square'
+          }`}>
+            <img
+              src={previewUrl}
+              alt="Preview"
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-50 transition-all flex items-center justify-center opacity-0 hover:opacity-100">
+              <button
+                onClick={onRemove}
+                className="bg-red-500 text-white p-2 rounded-full hover:bg-red-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div
+          onDragOver={handleDrag}
+          onDragEnter={handleDrag}
+          onDragLeave={handleDrag}
+          onDrop={handleDrop}
+          className={`relative border-2 border-dashed border-primary-300 rounded-lg p-4 transition-colors hover:border-primary-500 cursor-pointer ${
+            aspectRatio === 'banner' ? 'aspect-[16/5]' : 'aspect-square'
+          }`}
+        >
+          <input
+            type="file"
+            onChange={handleFileChange}
+            accept="image/*"
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          />
+          <div className="flex flex-col items-center justify-center h-full space-y-2">
+            <svg className="w-8 h-8 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <div className="text-center">
+              <p className="text-primary-600 text-sm">
+                ドラッグ＆ドロップ
+                <br />
+                または
+                <br />
+                クリックしてアップロード
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      <p className="mt-1 text-sm text-primary-500">
+        推奨サイズ: {aspectRatio === 'banner' ? '1600x500px' : '500x500px'}
+      </p>
     </div>
   );
 };
@@ -90,7 +211,7 @@ const ICOCreatePage: React.FC = () => {
     name: '',
     symbol: '',
     description: '',
-    markdownContent: '',
+    markdownContent: '# プロジェクトの詳細説明\n\n## 概要\n\n## 特徴\n\n## ロードマップ\n\n## チーム\n\n## トークンの用途',
     price: '',
     totalSupply: '',
     startDate: '',
@@ -108,12 +229,13 @@ const ICOCreatePage: React.FC = () => {
 
   const [vestingSchedules, setVestingSchedules] = useState<VestingSchedule[]>([{
     releaseDate: '',
-    percentage: '100' // 初期値を100%に設定
+    percentage: '100'
   }]);
 
   const [step, setStep] = useState<number>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [txError, setTxError] = useState<string | null>(null);
   const [headerImagePreview, setHeaderImagePreview] = useState<string | null>(null);
   const [iconImagePreview, setIconImagePreview] = useState<string | null>(null);
   const [headerImageUrl, setHeaderImageUrl] = useState<string>('');
@@ -132,8 +254,10 @@ const ICOCreatePage: React.FC = () => {
     functionName: 'createICO'
   });
 
+  // createICOData.hashが存在する場合のみトランザクション待機フックを有効化する
   const { isLoading: isWaitingForTx } = useWaitForTransaction({
     hash: createICOData?.hash,
+    enabled: Boolean(createICOData?.hash),
     onSuccess: async () => {
       try {
         // Save to database with contract_id
@@ -165,9 +289,9 @@ const ICOCreatePage: React.FC = () => {
           .insert([{
             ico_id: icoData.id,
             markdown_content: formData.markdownContent,
-            twitter_url: formData.twitter,
-            discord_url: formData.discord,
-            instagram_url: formData.instagram,
+            twitter_url: formData.twitter ? `https://twitter.com/${formData.twitter}` : null,
+            discord_url: formData.discord ? `https://discord.gg/${formData.discord}` : null,
+            instagram_url: formData.instagram ? `https://instagram.com/${formData.instagram}` : null,
             website_url: formData.website,
             whitepaper_url: formData.whitepaper
           }]);
@@ -194,7 +318,7 @@ const ICOCreatePage: React.FC = () => {
           name: '',
           symbol: '',
           description: '',
-          markdownContent: '',
+          markdownContent: '# プロジェクトの詳細説明\n\n## 概要\n\n## 特徴\n\n## ロードマップ\n\n## チーム\n\n## トークンの用途',
           price: '',
           totalSupply: '',
           startDate: '',
@@ -239,35 +363,48 @@ const ICOCreatePage: React.FC = () => {
     setFormData(prev => ({ ...prev, markdownContent: value }));
   };
 
-  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>, type: 'header' | 'icon') => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
+  const handleHeaderImageChange = useCallback((file: File) => {
     const reader = new FileReader();
-    
     reader.onloadend = () => {
-      if (type === 'header') {
-        setHeaderImagePreview(reader.result as string);
-        setFormData(prev => ({ ...prev, headerImage: file }));
-      } else {
-        setIconImagePreview(reader.result as string);
-        setFormData(prev => ({ ...prev, iconImage: file }));
-      }
+      setHeaderImagePreview(reader.result as string);
+      setFormData(prev => ({ ...prev, headerImage: file }));
     };
-    
     reader.readAsDataURL(file);
+  }, []);
+
+  const handleIconImageChange = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setIconImagePreview(reader.result as string);
+      setFormData(prev => ({
+        ...prev,
+        iconImage: file
+      }));
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const handleHeaderImageRemove = () => {
+    setHeaderImagePreview(null);
+    setFormData(prev => ({ ...prev, headerImage: null }));
+  };
+
+  const handleIconImageRemove = () => {
+    setIconImagePreview(null);
+    setFormData(prev => ({ ...prev, iconImage: null }));
   };
 
   const handleSocialLinksUpdate = (type: string, value: string) => {
-    setFormData(prev => ({ ...prev, [type]: value }));
+    // @マークがついている場合は削除
+    const cleanValue = value.startsWith('@') ? value.substring(1) : value;
+    setFormData(prev => ({ ...prev, [type]: cleanValue }));
   };
 
   const handleVestingScheduleChange = (index: number, field: keyof VestingSchedule, value: string) => {
     const newSchedules = [...vestingSchedules];
     newSchedules[index] = { ...newSchedules[index], [field]: value };
     
-    // パーセンテージが変更された場合、合計を100%に調整
+    // パーセンテージが変更された場合、合計が100%を超えないようにチェック
     if (field === 'percentage') {
       const total = newSchedules.reduce((sum, s, i) => {
         return i === index ? sum + parseFloat(value || '0') : sum + parseFloat(s.percentage || '0');
@@ -292,9 +429,22 @@ const ICOCreatePage: React.FC = () => {
       return;
     }
 
+    // 最後のスケジュールの日時を取得し、1日後に設定
+    const lastSchedule = vestingSchedules[vestingSchedules.length - 1];
+    let nextDate;
+    
+    if (lastSchedule.releaseDate) {
+      const lastDate = new Date(lastSchedule.releaseDate);
+      nextDate = new Date(lastDate.setDate(lastDate.getDate() + 1));
+    } else {
+      // 初回の場合はICO終了時刻から1時間後
+      nextDate = new Date(formData.endDate);
+      nextDate.setHours(nextDate.getHours() + 1);
+    }
+
     setVestingSchedules([...vestingSchedules, {
-      releaseDate: '',
-      percentage: (100 - currentTotal).toString() // 残りのパーセンテージを設定
+      releaseDate: nextDate.toISOString(),
+      percentage: (100 - currentTotal).toString()
     }]);
   };
 
@@ -373,11 +523,11 @@ const ICOCreatePage: React.FC = () => {
     }
   };
 
-  // handleSubmit function
   const handleSubmit = async () => {
     if (!validateStep(4)) return;
     setLoading(true);
     setError('');
+    setTxError(null);
 
     try {
       // Upload images first
@@ -450,7 +600,7 @@ const ICOCreatePage: React.FC = () => {
       }
 
       // Call contract creation
-      const result = await createICO({
+      await createICO({
         args: [
           formData.name,
           formData.symbol,
@@ -465,13 +615,54 @@ const ICOCreatePage: React.FC = () => {
         ]
       });
 
-      console.log('Transaction result:', result);
-
     } catch (err: any) {
       console.error('ICO creation error:', err);
-      setError(err.message || 'ICOの作成中にエラーが発生しました');
+      // MetaMask承認拒否のエラーを特定
+      if (err.message.includes('User rejected') || 
+          err.message.includes('user rejected') ||
+          err.message.includes('User denied')) {
+        setTxError('トランザクションが拒否されました');
+        setLoading(false);
+      } else {
+        setError(err.message || 'ICOの作成中にエラーが発生しました');
+      }
       setLoading(false);
     }
+  };
+
+  // トランザクションエラー表示
+  const renderTransactionError = () => {
+    if (!txError) return null;
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, height: 0 }}
+        animate={{ opacity: 1, height: 'auto' }}
+        exit={{ opacity: 0, height: 0 }}
+        className="bg-red-50 border-l-4 border-red-500 p-4 rounded mb-4"
+      >
+        <div className="flex items-center">
+          <div className="flex-shrink-0">
+            <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <div className="ml-3">
+            <p className="text-sm text-red-700">{txError}</p>
+          </div>
+          <div className="ml-auto pl-3">
+            <button
+              onClick={() => setTxError(null)}
+              className="inline-flex text-red-400 hover:text-red-500"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    );
   };
 
   return (
@@ -494,6 +685,9 @@ const ICOCreatePage: React.FC = () => {
           </React.Fragment>
         ))}
       </div>
+
+      {/* エラー表示 */}
+      {renderTransactionError()}
 
       {/* フォームコンテンツ */}
       <AnimatePresence mode="wait">
@@ -552,51 +746,21 @@ const ICOCreatePage: React.FC = () => {
 
           {step === 2 && (
             <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-primary-700 mb-2">
-                  ヘッダー画像
-                </label>
-                <div className="space-y-4">
-                  <input
-                    type="file"
-                    onChange={(e) => handleImageChange(e, 'header')}
-                    accept="image/*"
-                    className="w-full"
-                  />
-                  {headerImagePreview && (
-                    <div className="relative w-full h-48 rounded-lg overflow-hidden">
-                      <img
-                        src={headerImagePreview}
-                        alt="Header Preview"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
+              <ImageUploader
+                previewUrl={headerImagePreview}
+                onChange={handleHeaderImageChange}
+                onRemove={handleHeaderImageRemove}
+                label="ヘッダー画像"
+                aspectRatio="banner"
+              />
 
-              <div>
-                <label className="block text-sm font-medium text-primary-700 mb-2">
-                  アイコン画像
-                </label>
-                <div className="space-y-4">
-                  <input
-                    type="file"
-                    onChange={(e) => handleImageChange(e, 'icon')}
-                    accept="image/*"
-                    className="w-full"
-                  />
-                  {iconImagePreview && (
-                    <div className="relative w-24 h-24 rounded-full overflow-hidden">
-                      <img
-                        src={iconImagePreview}
-                        alt="Icon Preview"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
+              <ImageUploader
+                previewUrl={iconImagePreview}
+                onChange={handleIconImageChange}
+                onRemove={handleIconImageRemove}
+                label="アイコン画像"
+                aspectRatio="square"
+              />
 
               <div>
                 <label className="block text-sm font-medium text-primary-700 mb-2">
@@ -622,6 +786,9 @@ const ICOCreatePage: React.FC = () => {
                   isEditing={true}
                   onUpdate={handleSocialLinksUpdate}
                 />
+                <div className="mt-2 text-sm text-primary-500">
+                  ※Twitter/Instagram/Discordはユーザー名のみを入力してください（例: @なしで入力）
+                </div>
               </div>
             </div>
           )}
@@ -724,12 +891,17 @@ const ICOCreatePage: React.FC = () => {
 
               <div className="bg-yellow-50 p-4 rounded-lg">
                 <p className="text-yellow-800">
-                  ベスティングスケジュールの合計は100%である必要があります。
-                  現在の合計: {vestingSchedules.reduce((sum, schedule) => sum + parseFloat(schedule.percentage || '0'), 0)}%
+                  <span className="font-medium">ベスティングスケジュールの合計: </span>
+                  {vestingSchedules.reduce((sum, schedule) => sum + parseFloat(schedule.percentage || '0'), 0)}%
+                  {vestingSchedules.reduce((sum, schedule) => sum + parseFloat(schedule.percentage || '0'), 0) !== 100 && (
+                    <span className="block mt-1 text-red-600">
+                      ※合計が100%になるように設定してください
+                    </span>
+                  )}
                 </p>
               </div>
 
-              <AnimatePresence>
+              <AnimatePresence initial={false}>
                 {vestingSchedules.map((schedule, index) => (
                   <motion.div
                     key={index}
@@ -741,15 +913,16 @@ const ICOCreatePage: React.FC = () => {
                     <div className="flex justify-between items-center">
                       <h4 className="font-medium text-primary-900">スケジュール {index + 1}</h4>
                       {index > 0 && (
-                        <button
-                          type="button"
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
                           onClick={() => removeVestingSchedule(index)}
-                          className="text-red-600 hover:text-red-700"
+                          className="text-red-600 hover:text-red-700 p-1 rounded-full hover:bg-red-50"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
-                        </button>
+                        </motion.button>
                       )}
                     </div>
 
@@ -759,6 +932,7 @@ const ICOCreatePage: React.FC = () => {
                         value={schedule.releaseDate}
                         onChange={(value) => handleVestingScheduleChange(index, 'releaseDate', value)}
                         minDate={formData.endDate ? new Date(formData.endDate) : new Date()}
+                        inheritDate={index === 0 ? formData.endDate : vestingSchedules[index - 1]?.releaseDate}
                       />
 
                       <div>
@@ -781,10 +955,14 @@ const ICOCreatePage: React.FC = () => {
                 ))}
               </AnimatePresence>
 
-              {error && (
-                <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
-                  <p className="text-red-700">{error}</p>
-                </div>
+              {(error || txError) && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="bg-red-50 border-l-4 border-red-500 p-4 rounded"
+                >
+                  <p className="text-red-700">{error || txError}</p>
+                </motion.div>
               )}
             </div>
           )}
@@ -815,7 +993,7 @@ const ICOCreatePage: React.FC = () => {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
               </svg>
-              <span>処理中...</span>
+              <span>{isWaitingForTx ? 'トランザクション処理中...' : '処理中...'}</span>
             </span>
           ) : step === 4 ? (
             'ICOを作成'
