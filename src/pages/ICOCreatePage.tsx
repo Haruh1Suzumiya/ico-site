@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useContractWrite, useContractRead, useWaitForTransaction } from 'wagmi';
 import { parseEther } from 'viem';
@@ -302,38 +302,78 @@ const ICOCreatePage: React.FC = () => {
     setVestingSchedules(vestingSchedules.filter((_, i) => i !== index));
   };
 
+  // validateStep function
   const validateStep = (currentStep: number): boolean => {
-    switch (currentStep) {
-      case 1:
-        return !!(formData.name && formData.symbol && formData.description);
-      case 2:
-        return !!(formData.markdownContent && formData.headerImage && formData.iconImage);
-      case 3:
-        return !!(
-          formData.price && 
-          formData.totalSupply && 
-          formData.startDate && 
-          formData.endDate &&
-          formData.minPurchase &&
-          formData.maxPurchase &&
-          new Date(formData.startDate) > new Date() &&
-          new Date(formData.endDate) > new Date(formData.startDate)
-        );
-      case 4:
-        const totalPercentage = vestingSchedules.reduce((sum, schedule) => 
-          sum + (schedule.percentage ? parseFloat(schedule.percentage) : 0), 0
-        );
-        const hasValidSchedules = vestingSchedules.every(schedule => 
-          schedule.releaseDate && 
-          schedule.percentage &&
-          new Date(schedule.releaseDate) > new Date(formData.endDate)
-        );
-        return hasValidSchedules && Math.abs(totalPercentage - 100) < 0.0001;
-      default:
-        return true;
+    try {
+      switch (currentStep) {
+        case 1:
+          if (!formData.name || !formData.symbol || !formData.description) {
+            return false;
+          }
+          return true;
+
+        case 2:
+          if (!formData.markdownContent || !formData.headerImage || !formData.iconImage) {
+            return false;
+          }
+          return true;
+
+        case 3:
+          if (!formData.price || !formData.totalSupply || !formData.startDate || 
+              !formData.endDate || !formData.minPurchase || !formData.maxPurchase) {
+            return false;
+          }
+
+          const start = new Date(formData.startDate);
+          const end = new Date(formData.endDate);
+          const now = new Date();
+
+          if (start <= now || end <= start) {
+            return false;
+          }
+
+          // Validate numbers
+          const price = parseFloat(formData.price);
+          const minPurchase = parseFloat(formData.minPurchase);
+          const maxPurchase = parseFloat(formData.maxPurchase);
+
+          if (isNaN(price) || price <= 0 || 
+              isNaN(minPurchase) || minPurchase <= 0 ||
+              isNaN(maxPurchase) || maxPurchase <= minPurchase) {
+            return false;
+          }
+
+          return true;
+
+        case 4:
+          const totalPercentage = vestingSchedules.reduce((sum, schedule) => 
+            sum + (schedule.percentage ? parseFloat(schedule.percentage) : 0), 0
+          );
+
+          if (Math.abs(totalPercentage - 100) >= 0.001) {
+            return false;
+          }
+
+          const endDate = new Date(formData.endDate);
+          const hasValidSchedules = vestingSchedules.every(schedule => 
+            schedule.releaseDate && 
+            schedule.percentage &&
+            new Date(schedule.releaseDate) > endDate &&
+            parseFloat(schedule.percentage) > 0
+          );
+
+          return hasValidSchedules;
+
+        default:
+          return true;
+      }
+    } catch (error) {
+      console.error('Validation error:', error);
+      return false;
     }
   };
 
+  // handleSubmit function
   const handleSubmit = async () => {
     if (!validateStep(4)) return;
     setLoading(true);
@@ -361,42 +401,55 @@ const ICOCreatePage: React.FC = () => {
         setIconImageUrl(iconData.path);
       }
 
-      // 数値の変換を修正
+      // Validate required fields
+      if (!formData.name || !formData.symbol || !formData.totalSupply || 
+          !formData.price || !formData.startDate || !formData.endDate || 
+          !formData.minPurchase || !formData.maxPurchase) {
+        throw new Error('必須項目が入力されていません');
+      }
+
+      // Convert dates to UNIX timestamp
       const startTime = BigInt(Math.floor(new Date(formData.startDate).getTime() / 1000));
       const endTime = BigInt(Math.floor(new Date(formData.endDate).getTime() / 1000));
+
+      // Check dates
+      if (startTime >= endTime) {
+        throw new Error('終了日時は開始日時より後に設定してください');
+      }
       
-      // parseEtherの使用法を修正
+      // Parse amounts with proper decimal handling
       const totalSupply = parseEther(formData.totalSupply);
       const tokenPrice = parseEther(formData.price);
       const minPurchase = parseEther(formData.minPurchase);
       const maxPurchase = parseEther(formData.maxPurchase);
 
-      // Vesting schedules
-      const vestingDates = vestingSchedules.map(schedule => 
-        BigInt(Math.floor(new Date(schedule.releaseDate).getTime() / 1000))
+      // Validate vesting schedule
+      const totalPercentage = vestingSchedules.reduce((sum, schedule) => 
+        sum + parseFloat(schedule.percentage || '0'), 0
       );
-      const vestingPercents = vestingSchedules.map(schedule => 
-        BigInt(Math.floor(parseFloat(schedule.percentage))) // すでに100%ベースの値なのでそのまま使用
-      );
+      
+      if (Math.abs(totalPercentage - 100) > 0.001) {
+        throw new Error('ベスティングスケジュールの合計は100%である必要があります');
+      }
 
-      console.log('Contract parameters:', {
-        name: formData.name,
-        symbol: formData.symbol,
-        totalSupply: totalSupply.toString(),
-        tokenPrice: tokenPrice.toString(),
-        startTime: startTime.toString(),
-        endTime: endTime.toString(),
-        minPurchase: minPurchase.toString(),
-        maxPurchase: maxPurchase.toString(),
-        vestingDates: vestingDates.map(d => d.toString()),
-        vestingPercents: vestingPercents.map(p => p.toString())
+      // Prepare vesting schedules
+      const vestingDates = vestingSchedules.map(schedule => {
+        const date = new Date(schedule.releaseDate);
+        if (date <= new Date(formData.endDate)) {
+          throw new Error('ベスティング日時はICO終了後に設定してください');
+        }
+        return BigInt(Math.floor(date.getTime() / 1000));
       });
+
+      const vestingPercents = vestingSchedules.map(schedule => 
+        BigInt(Math.floor(parseFloat(schedule.percentage)))
+      );
 
       if (!createICO) {
         throw new Error('createICO function is not available');
       }
-  
-      // Contract creation
+
+      // Call contract creation
       const result = await createICO({
         args: [
           formData.name,
@@ -411,16 +464,16 @@ const ICOCreatePage: React.FC = () => {
           vestingPercents
         ]
       });
-  
+
       console.log('Transaction result:', result);
-  
+
     } catch (err: any) {
       console.error('ICO creation error:', err);
       setError(err.message || 'ICOの作成中にエラーが発生しました');
       setLoading(false);
     }
   };
-  
+
   return (
     <div className="max-w-3xl mx-auto p-8">
       {/* ステップインジケーター */}
