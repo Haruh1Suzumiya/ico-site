@@ -17,6 +17,7 @@ const Dashboard: React.FC = () => {
         const { data, error } = await supabaseClient
           .from('icos')
           .select('*')
+          .eq('is_visible', true)
           .order('start_date', { ascending: true });
         
         if (error) throw error;
@@ -93,6 +94,21 @@ const Dashboard: React.FC = () => {
     );
   };
 
+  const formatDateTime = (dateString: string) => {
+    // タイムゾーン情報が含まれていない場合は、JSTとして解釈
+    const date = dateString.includes('Z') 
+      ? new Date(new Date(dateString).getTime() + 9 * 60 * 60 * 1000)
+      : new Date(dateString);
+  
+    return date.toLocaleString('ja-JP', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-screen">
@@ -124,10 +140,10 @@ const Dashboard: React.FC = () => {
         onClick={() => handleICOClick(ico.id)}
         className="card group cursor-pointer"
       >
-        {ico.image_url && (
+        {ico.header_image_url && (
           <div className="relative h-48 overflow-hidden rounded-t-xl">
             <img
-              src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/ico-images/${ico.image_url}`}
+              src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/ico-images/${ico.header_image_url}`}
               alt={ico.name}
               className="w-full h-full object-cover"
             />
@@ -136,13 +152,24 @@ const Dashboard: React.FC = () => {
         )}
         <div className="p-6">
           <div className="flex items-start justify-between mb-4">
-            <div>
-              <h3 className="text-xl font-bold text-primary-900 group-hover:text-primary-700 transition-colors">
-                {ico.name}
-              </h3>
-              <span className="text-sm font-medium text-primary-600">
-                {ico.symbol}
-              </span>
+            <div className="flex items-center space-x-3">
+              {ico.icon_image_url && (
+                <div className="w-12 h-12 rounded-full overflow-hidden">
+                  <img
+                    src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/ico-images/${ico.icon_image_url}`}
+                    alt={`${ico.name} icon`}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+              <div>
+                <h3 className="text-xl font-bold text-primary-900 group-hover:text-primary-700 transition-colors">
+                  {ico.name}
+                </h3>
+                <span className="text-sm font-medium text-primary-600">
+                  {ico.symbol}
+                </span>
+              </div>
             </div>
             {getStatusBadge(ico)}
           </div>
@@ -157,7 +184,7 @@ const Dashboard: React.FC = () => {
             <div className="flex justify-between items-center text-sm">
               <span className="text-primary-600">期間</span>
               <span className="font-medium text-primary-900">
-                {new Date(ico.start_date).toLocaleDateString()} - {new Date(ico.end_date).toLocaleDateString()}
+                {formatDateTime(ico.start_date)} - {formatDateTime(ico.end_date)}
               </span>
             </div>
           </div>

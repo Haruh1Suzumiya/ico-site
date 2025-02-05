@@ -11,11 +11,10 @@ const ICOControlPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'active' | 'upcoming' | 'ended'>('all');
-  
-  // ページネーション用のstate
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalIcos, setTotalIcos] = useState(0);
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchICOs();
@@ -25,10 +24,8 @@ const ICOControlPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      // まず現在のフィルタに基づいて総数を取得
       let query = supabaseClient.from('icos').select('*', { count: 'exact' });
 
-      // フィルタリング条件の適用
       if (selectedFilter !== 'all') {
         const now = new Date().toISOString();
         switch (selectedFilter) {
@@ -53,14 +50,12 @@ const ICOControlPage: React.FC = () => {
       setTotalIcos(total);
       setTotalPages(Math.ceil(total / ITEMS_PER_PAGE));
 
-      // 実際のデータ取得
       query = supabaseClient
         .from('icos')
         .select('*')
         .order('created_at', { ascending: false })
         .range((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE - 1);
 
-      // 同じフィルタリング条件を適用
       if (selectedFilter !== 'all') {
         const now = new Date().toISOString();
         switch (selectedFilter) {
@@ -90,17 +85,23 @@ const ICOControlPage: React.FC = () => {
     }
   };
 
-  const toggleICOStatus = async (icoId: string, currentStatus: boolean) => {
+  const updateICOStatus = async (icoId: string, currentStatus: boolean, visibility: boolean) => {
+    setProcessingId(icoId);
     try {
       const { error } = await supabaseClient
         .from('icos')
-        .update({ isActive: !currentStatus })
+        .update({ 
+          is_active: !currentStatus,
+          is_visible: visibility 
+        })
         .eq('id', icoId);
       
       if (error) throw error;
       await fetchICOs();
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -121,7 +122,7 @@ const ICOControlPage: React.FC = () => {
 
   const handleFilterChange = (filter: typeof selectedFilter) => {
     setSelectedFilter(filter);
-    setCurrentPage(1); // フィルター変更時は1ページ目に戻る
+    setCurrentPage(1);
   };
 
   const getStatusColor = (status: 'active' | 'upcoming' | 'ended') => {
@@ -157,19 +158,21 @@ const ICOControlPage: React.FC = () => {
       <div className="mb-6">
         <div className="flex flex-wrap gap-2">
           {(['all', 'active', 'upcoming', 'ended'] as const).map((filter) => (
-            <button
+            <motion.button
               key={filter}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => handleFilterChange(filter)}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
                 selectedFilter === filter
-                  ? 'bg-primary-900 text-white'
+                  ? 'bg-primary-900 text-white shadow-md'
                   : 'bg-primary-100 text-primary-700 hover:bg-primary-200'
               }`}
             >
               {filter === 'all' ? 'すべて' : 
                filter === 'active' ? '実施中' :
                filter === 'upcoming' ? '開始予定' : '終了済み'}
-            </button>
+            </motion.button>
           ))}
         </div>
       </div>
@@ -183,9 +186,9 @@ const ICOControlPage: React.FC = () => {
       <AnimatePresence mode="popLayout">
         {icos.length === 0 ? (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             className="text-center py-12"
           >
             <p className="text-primary-600">該当するICOプロジェクトはありません</p>
@@ -194,6 +197,7 @@ const ICOControlPage: React.FC = () => {
           <div className="space-y-4">
             {icos.map((ico) => {
               const status = getICOStatus(ico);
+              const isProcessing = processingId === ico.id;
               return (
                 <motion.div
                   key={ico.id}
@@ -213,6 +217,11 @@ const ICOControlPage: React.FC = () => {
                           {status === 'active' ? '実施中' :
                            status === 'upcoming' ? '開始予定' : '終了済み'}
                         </span>
+                        {!ico.is_visible && (
+                          <span className="px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
+                            非表示
+                          </span>
+                        )}
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-primary-600">
                         <div>
@@ -241,18 +250,46 @@ const ICOControlPage: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => toggleICOStatus(ico.id, ico.isActive)}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        ico.isActive
-                          ? 'bg-red-600 text-white hover:bg-red-700'
-                          : 'bg-green-600 text-white hover:bg-green-700'
-                      }`}
-                    >
-                      {ico.isActive ? '非アクティブにする' : 'アクティブにする'}
-                    </motion.button>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => updateICOStatus(ico.id, ico.is_active, !ico.is_visible)}
+                        disabled={isProcessing}
+                        className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                          ico.is_visible
+                            ? 'bg-red-100 text-red-800 hover:bg-red-200'
+                            : 'bg-green-100 text-green-800 hover:bg-green-200'
+                        }`}
+                      >
+                        {isProcessing ? (
+                          <div className="flex items-center justify-center">
+                            <div className="animate-spin h-5 w-5 border-2 border-current border-t-transparent rounded-full"></div>
+                          </div>
+                        ) : (
+                          ico.is_visible ? '非表示にする' : '表示する'
+                        )}
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => updateICOStatus(ico.id, ico.is_active, ico.is_visible)}
+                        disabled={isProcessing}
+                        className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                          ico.is_active
+                            ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+                            : 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+                        }`}
+                      >
+                        {isProcessing ? (
+                          <div className="flex items-center justify-center">
+                            <div className="animate-spin h-5 w-5 border-2 border-current border-t-transparent rounded-full"></div>
+                          </div>
+                        ) : (
+                          ico.is_active ? '一時停止' : 'アクティブ化'
+                        )}
+                      </motion.button>
+                    </div>
                   </div>
                 </motion.div>
               );

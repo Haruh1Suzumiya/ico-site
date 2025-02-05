@@ -10,10 +10,10 @@ export interface ICOData {
   contract_id: bigint;
   header_image_url: string;
   icon_image_url: string;
-  image_url?: string;
   min_purchase: number;
   max_purchase: number;
-  isActive: boolean;
+  is_active: boolean;
+  is_visible: boolean;
   created_at: string;
 }
 
@@ -43,6 +43,5 @@ export interface Purchase {
     symbol: string;
     price: number;
     icon_image_url?: string;
-    image_url?: string;
   };
 }

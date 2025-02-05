@@ -262,24 +262,25 @@ const ICOCreatePage: React.FC = () => {
       try {
         // Save to database with contract_id
         const { data: icoData, error: icoError } = await supabaseClient
-          .from('icos')
-          .insert([{
-            name: formData.name,
-            symbol: formData.symbol,
-            description: formData.description,
-            price: parseFloat(formData.price),
-            start_date: formData.startDate,
-            end_date: formData.endDate,
-            total_supply: parseFloat(formData.totalSupply),
-            min_purchase: parseFloat(formData.minPurchase),
-            max_purchase: parseFloat(formData.maxPurchase),
-            header_image_url: headerImageUrl,
-            icon_image_url: iconImageUrl,
-            is_active: true,
-            contract_id: Number(icoCount)
-          }])
-          .select()
-          .single();
+        .from('icos')
+        .insert([{
+          name: formData.name,
+          symbol: formData.symbol,
+          description: formData.description,
+          price: parseFloat(formData.price),
+          // タイムゾーンを指定して保存
+          start_date: new Date(formData.startDate).toISOString().replace('Z', '+09:00'),
+          end_date: new Date(formData.endDate).toISOString().replace('Z', '+09:00'),
+          total_supply: parseFloat(formData.totalSupply),
+          min_purchase: parseFloat(formData.minPurchase),
+          max_purchase: parseFloat(formData.maxPurchase),
+          header_image_url: headerImageUrl,
+          icon_image_url: iconImageUrl,
+          is_active: true,
+          contract_id: Number(icoCount)
+        }])
+        .select()
+        .single();
 
         if (icoError) throw icoError;
 
