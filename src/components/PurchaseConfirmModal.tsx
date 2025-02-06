@@ -25,7 +25,7 @@ const PurchaseConfirmModal: React.FC<PurchaseConfirmModalProps> = ({
   return (
     <AnimatePresence>
       {isOpen && (
-        <>
+        <div className="fixed inset-0 flex items-center justify-center z-50">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 0.5 }}
@@ -35,10 +35,11 @@ const PurchaseConfirmModal: React.FC<PurchaseConfirmModalProps> = ({
           />
           
           <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="fixed inset-x-4 top-1/2 -translate-y-1/2 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 max-w-lg w-full bg-white rounded-xl shadow-xl z-50 p-6"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ type: "spring", damping: 20, stiffness: 300 }}
+            className="relative max-w-lg w-full bg-white rounded-xl shadow-xl z-50 p-6 mx-4"
           >
             <div className="space-y-6">
               <div className="text-center">
@@ -57,7 +58,7 @@ const PurchaseConfirmModal: React.FC<PurchaseConfirmModalProps> = ({
                     </div>
                     <div>
                       <p className="text-sm text-primary-600">支払いUSDT</p>
-                      <p className="font-medium text-primary-900">{usdtAmount} USDT</p>
+                      <p className="font-medium text-primary-900">{usdtAmount}</p>
                     </div>
                   </div>
                 </div>
@@ -83,8 +84,8 @@ const PurchaseConfirmModal: React.FC<PurchaseConfirmModalProps> = ({
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={onClose}
-                  className="flex-1 btn-secondary"
                   disabled={isLoading}
+                  className="flex-1 btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   キャンセル
                 </motion.button>
@@ -94,7 +95,7 @@ const PurchaseConfirmModal: React.FC<PurchaseConfirmModalProps> = ({
                   whileTap={{ scale: 0.98 }}
                   onClick={onConfirm}
                   disabled={isLoading}
-                  className="flex-1 btn-primary"
+                  className="flex-1 btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isLoading ? (
                     <div className="flex items-center justify-center space-x-2">
@@ -111,7 +112,7 @@ const PurchaseConfirmModal: React.FC<PurchaseConfirmModalProps> = ({
               </div>
             </div>
           </motion.div>
-        </>
+        </div>
       )}
     </AnimatePresence>
   );

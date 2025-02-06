@@ -76,23 +76,25 @@ const ICODetail: React.FC = () => {
   }, [id]);
 
   const { write: approveUSDT, data: approveData } = useContractWrite({
-    address: import.meta.env.VITE_USDT_CONTRACT_ADDRESS as `0x${string}`,
+    address: import.meta.env.VITE_USDT_ADDRESS as `0x${string}`,
     abi: ERC20_ABI,
     functionName: 'approve'
   });
-
+  
   const { write: purchaseTokens, data: purchaseData } = useContractWrite({
-    address: import.meta.env.VITE_ICO_CONTRACT_ADDRESS as `0x${string}`,
+    address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
     abi: ICO_ABI,
     functionName: 'purchaseTokens'
   });
 
+  // トランザクション待機フックの修正
   const { isLoading: isApprovePending } = useWaitForTransaction({
     hash: approveData?.hash,
     onSuccess: async () => {
+      if (!ico) return;
       const usdtAmountWei = parseEther(usdtAmount);
       await purchaseTokens({
-        args: [BigInt(ico!.contract_id), BigInt(usdtAmountWei)]
+        args: [BigInt(ico.contract_id), BigInt(usdtAmountWei)]
       });
     }
   });
@@ -117,42 +119,76 @@ const ICODetail: React.FC = () => {
   const handleAmountChange = (value: string, type: 'token' | 'usdt') => {
     if (!ico) return;
     
+    let newTokenAmount: string;
+    let newUsdtAmount: string;
+    
     if (type === 'token') {
-      setTokenAmount(value);
-      const calculatedUsdt = (parseFloat(value) * ico.price).toString();
-      setUsdtAmount(calculatedUsdt);
+      newTokenAmount = value;
+      newUsdtAmount = (parseFloat(value) * ico.price).toString();
     } else {
-      setUsdtAmount(value);
-      const calculatedTokens = (parseFloat(value) / ico.price).toString();
-      setTokenAmount(calculatedTokens);
+      newUsdtAmount = value;
+      newTokenAmount = (parseFloat(value) / ico.price).toString();
     }
+    
+    setTokenAmount(newTokenAmount);
+    setUsdtAmount(newUsdtAmount);
   };
 
+  const validateAndAdjustAmount = () => {
+    if (!ico || !tokenAmount) return false;
+    
+    const currentUsdtAmount = parseFloat(usdtAmount);
+    
+    if (currentUsdtAmount < ico.min_purchase) {
+      // 最小購入額に調整
+      const minTokens = ico.min_purchase / ico.price;
+      setTokenAmount(minTokens.toString());
+      setUsdtAmount(ico.min_purchase.toString());
+      return true;
+    }
+    
+    if (currentUsdtAmount > ico.max_purchase) {
+      // 最大購入額に調整
+      const maxTokens = ico.max_purchase / ico.price;
+      setTokenAmount(maxTokens.toString());
+      setUsdtAmount(ico.max_purchase.toString());
+      return true;
+    }
+    
+    return true;
+  };
+  
   const handlePurchase = async () => {
     if (!ico || !tokenAmount || !address) return;
-
+    
+    // 購入額のバリデーションと調整
+    if (!validateAndAdjustAmount()) return;
+  
     const { data: profile } = await supabaseClient
       .from('profiles')
       .select('wallet_address')
       .eq('id', user?.id)
       .single();
-
+  
     if (!profile?.wallet_address) {
       navigate('/account');
       return;
     }
-
+  
     setEstimatedGas('0.002');
     setShowConfirmModal(true);
   };
 
   const handleConfirmPurchase = async () => {
-    if (!ico || !usdtAmount) return;
+    if (!ico || !usdtAmount || !address) return;
     setLoading(true);
     try {
       const usdtAmountWei = parseEther(usdtAmount);
       await approveUSDT({
-        args: [import.meta.env.VITE_ICO_CONTRACT_ADDRESS, BigInt(usdtAmountWei)]
+        args: [
+          import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`, 
+          BigInt(usdtAmountWei)
+        ]
       });
     } catch (error) {
       console.error('Purchase error:', error);
@@ -365,12 +401,12 @@ const ICODetail: React.FC = () => {
                 {loading || isApprovePending || isPurchasePending ? (
                   <span className="flex items-center justify-center">
                     <svg className="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M412a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                     {isApprovePending ? 'USDT承認中...' :
-                     isPurchasePending ? '購入処理中...' :
-                     '処理中...'}
+                    isPurchasePending ? '購入処理中...' :
+                    '処理中...'}
                   </span>
                 ) : (
                   getButtonText()
@@ -394,16 +430,16 @@ const ICODetail: React.FC = () => {
         </motion.div>
       </div>
 
-      <PurchaseConfirmModal
-        isOpen={showConfirmModal}
-        onClose={() => setShowConfirmModal(false)}
-        onConfirm={handleConfirmPurchase}
-        tokenAmount={`${tokenAmount} ${ico.symbol}`}
-        usdtAmount={`${usdtAmount} USDT`}
-        tokenSymbol={ico.symbol}
-        estimatedGas={estimatedGas}
-        isLoading={isApprovePending || isPurchasePending}
-      />
+        <PurchaseConfirmModal
+          isOpen={showConfirmModal}
+          onClose={() => setShowConfirmModal(false)}
+          onConfirm={handleConfirmPurchase}
+          tokenAmount={tokenAmount} // シンボルを除去
+          usdtAmount={`${usdtAmount} USDT`}
+          tokenSymbol={ico.symbol}
+          estimatedGas={estimatedGas}
+          isLoading={isApprovePending || isPurchasePending}
+        />
     </div>
   );
 };

@@ -6,7 +6,7 @@ import supabaseClient from '../lib/supabaseClient';
 import { ICO_ABI } from '../contracts/abis';
 import MarkdownEditor from '../components/MarkdownEditor';
 import SocialLinks from '../components/SocialLinks';
-import { toJSTString, convertToUTC } from '../utils/date';
+import { toJSTString } from '../utils/date';
 
 interface ICOFormData {
   name: string;
