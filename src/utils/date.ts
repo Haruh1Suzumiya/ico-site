@@ -27,9 +27,23 @@ export const convertToUTC = (jstString: string): string => {
  * 日付文字列をJST基準に変換する
  */
 export const toJSTString = (date: Date): string => {
-  const jstDate = new Date(date.getTime() + JST_OFFSET);
-  return jstDate.toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm形式
-};
+    // 無効な日付の場合は現在時刻を使用
+    if (isNaN(date.getTime())) {
+      date = new Date();
+    }
+    
+    // JSTに変換（UTC+9）
+    const jstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
+    
+    // YYYY-MM-DDTHH:mm 形式にフォーマット
+    const year = jstDate.getUTCFullYear();
+    const month = String(jstDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(jstDate.getUTCDate()).padStart(2, '0');
+    const hours = String(jstDate.getUTCHours()).padStart(2, '0');
+    const minutes = String(jstDate.getUTCMinutes()).padStart(2, '0');
+  
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
 
 /**
  * JSTの現在時刻を取得

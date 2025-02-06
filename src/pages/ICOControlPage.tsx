@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import supabaseClient from '../lib/supabaseClient';
 import { ICOData } from '../types';
 import Pagination from '../components/Pagination';
+import SalePhaseModal from '../components/SalePhaseModal';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -15,6 +16,8 @@ const ICOControlPage: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalIcos, setTotalIcos] = useState(0);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [showSalePhaseModal, setShowSalePhaseModal] = useState(false);
+  const [selectedIcoId, setSelectedIcoId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchICOs();
@@ -289,6 +292,18 @@ const ICOControlPage: React.FC = () => {
                           ico.is_active ? '一時停止' : 'アクティブ化'
                         )}
                       </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => {
+                          setSelectedIcoId(ico.contract_id);
+                          setShowSalePhaseModal(true);
+                        }}
+                        disabled={isProcessing}
+                        className="px-4 py-2 rounded-lg font-medium transition-all duration-200 bg-primary-100 text-primary-800 hover:bg-primary-200"
+                      >
+                        セールフェーズ設定
+                      </motion.button>
                     </div>
                   </div>
                 </motion.div>
@@ -306,6 +321,19 @@ const ICOControlPage: React.FC = () => {
             onPageChange={handlePageChange}
           />
         </div>
+      )}
+
+      {selectedIcoId !== null && (
+        <SalePhaseModal
+          isOpen={showSalePhaseModal}
+          onClose={() => {
+            setShowSalePhaseModal(false);
+            setSelectedIcoId(null);
+          }}
+          icoId={selectedIcoId}
+          icoStartDate={icos.find(ico => ico.contract_id === selectedIcoId)?.start_date || ''}
+          icoEndDate={icos.find(ico => ico.contract_id === selectedIcoId)?.end_date || ''}
+        />
       )}
     </div>
   );

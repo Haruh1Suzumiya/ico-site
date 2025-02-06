@@ -7,7 +7,7 @@ export interface ICOData {
   start_date: string;
   end_date: string;
   total_supply: number;
-  contract_id: bigint;
+  contract_id: number;  // bigintからnumberに変更
   header_image_url: string;
   icon_image_url: string;
   min_purchase: number;
@@ -15,6 +15,13 @@ export interface ICOData {
   is_active: boolean;
   is_visible: boolean;
   created_at: string;
+}
+
+export interface SalePhase {
+  startDate: string;
+  endDate: string;
+  price: string;
+  maxAllocation: string;
 }
 
 export interface ICODetails {
