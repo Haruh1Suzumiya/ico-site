@@ -136,3 +136,18 @@ export const formatJSTDate = (dateString: string): string => {
     timeZone: 'Asia/Tokyo'
   });
 };
+
+export const formatDateForInput = (dateString: string): string => {
+  const date = new Date(dateString);
+  // JSTオフセットを追加（9時間）
+  const jstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
+  
+  // YYYY-MM-DDThh:mm フォーマットに変換（JSTベース）
+  const year = jstDate.getUTCFullYear();
+  const month = String(jstDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(jstDate.getUTCDate()).padStart(2, '0');
+  const hours = String(jstDate.getUTCHours()).padStart(2, '0');
+  const minutes = String(jstDate.getUTCMinutes()).padStart(2, '0');
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+};

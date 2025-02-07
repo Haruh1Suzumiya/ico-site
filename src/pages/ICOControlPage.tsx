@@ -136,6 +136,89 @@ const ICOControlPage: React.FC = () => {
     }
   };
 
+  const renderActionButtons = (ico: ICOData, status: 'active' | 'upcoming' | 'ended') => {
+    if (status === 'ended') {
+      return (
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => updateICOStatus(ico.id, ico.is_active, !ico.is_visible)}
+          disabled={!!processingId}
+          className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+            ico.is_visible
+              ? 'bg-red-100 text-red-800 hover:bg-red-200'
+              : 'bg-green-100 text-green-800 hover:bg-green-200'
+          }`}
+        >
+          {processingId === ico.id ? (
+            <div className="flex items-center justify-center">
+              <div className="animate-spin h-5 w-5 border-2 border-current border-t-transparent rounded-full"></div>
+            </div>
+          ) : (
+            ico.is_visible ? '非表示にする' : '表示する'
+          )}
+        </motion.button>
+      );
+    }
+
+    return (
+      <div className="flex flex-col sm:flex-row gap-2">
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => updateICOStatus(ico.id, ico.is_active, !ico.is_visible)}
+          disabled={!!processingId}
+          className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+            ico.is_visible
+              ? 'bg-red-100 text-red-800 hover:bg-red-200'
+              : 'bg-green-100 text-green-800 hover:bg-green-200'
+          }`}
+        >
+          {processingId === ico.id ? (
+            <div className="flex items-center justify-center">
+              <div className="animate-spin h-5 w-5 border-2 border-current border-t-transparent rounded-full"></div>
+            </div>
+          ) : (
+            ico.is_visible ? '非表示にする' : '表示する'
+          )}
+        </motion.button>
+
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => updateICOStatus(ico.id, ico.is_active, ico.is_visible)}
+          disabled={!!processingId}
+          className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+            ico.is_active
+              ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+              : 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+          }`}
+        >
+          {processingId === ico.id ? (
+            <div className="flex items-center justify-center">
+              <div className="animate-spin h-5 w-5 border-2 border-current border-t-transparent rounded-full"></div>
+            </div>
+          ) : (
+            ico.is_active ? '一時停止' : 'アクティブ化'
+          )}
+        </motion.button>
+
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            setSelectedIcoId(ico.contract_id);
+            setShowSalePhaseModal(true);
+          }}
+          disabled={!!processingId}
+          className="px-4 py-2 rounded-lg font-medium transition-all duration-200 bg-primary-100 text-primary-800 hover:bg-primary-200"
+        >
+          セールフェーズ設定
+        </motion.button>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="p-8">
@@ -200,7 +283,6 @@ const ICOControlPage: React.FC = () => {
           <div className="space-y-4">
             {icos.map((ico) => {
               const status = getICOStatus(ico);
-              const isProcessing = processingId === ico.id;
               return (
                 <motion.div
                   key={ico.id}
@@ -254,56 +336,7 @@ const ICOControlPage: React.FC = () => {
                       </div>
                     </div>
                     <div className="flex flex-col sm:flex-row gap-2">
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => updateICOStatus(ico.id, ico.is_active, !ico.is_visible)}
-                        disabled={isProcessing}
-                        className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                          ico.is_visible
-                            ? 'bg-red-100 text-red-800 hover:bg-red-200'
-                            : 'bg-green-100 text-green-800 hover:bg-green-200'
-                        }`}
-                      >
-                        {isProcessing ? (
-                          <div className="flex items-center justify-center">
-                            <div className="animate-spin h-5 w-5 border-2 border-current border-t-transparent rounded-full"></div>
-                          </div>
-                        ) : (
-                          ico.is_visible ? '非表示にする' : '表示する'
-                        )}
-                      </motion.button>
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => updateICOStatus(ico.id, ico.is_active, ico.is_visible)}
-                        disabled={isProcessing}
-                        className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                          ico.is_active
-                            ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                            : 'bg-blue-100 text-blue-800 hover:bg-blue-200'
-                        }`}
-                      >
-                        {isProcessing ? (
-                          <div className="flex items-center justify-center">
-                            <div className="animate-spin h-5 w-5 border-2 border-current border-t-transparent rounded-full"></div>
-                          </div>
-                        ) : (
-                          ico.is_active ? '一時停止' : 'アクティブ化'
-                        )}
-                      </motion.button>
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => {
-                          setSelectedIcoId(ico.contract_id);
-                          setShowSalePhaseModal(true);
-                        }}
-                        disabled={isProcessing}
-                        className="px-4 py-2 rounded-lg font-medium transition-all duration-200 bg-primary-100 text-primary-800 hover:bg-primary-200"
-                      >
-                        セールフェーズ設定
-                      </motion.button>
+                      {renderActionButtons(ico, status)}
                     </div>
                   </div>
                 </motion.div>
@@ -333,6 +366,9 @@ const ICOControlPage: React.FC = () => {
           icoId={selectedIcoId}
           icoStartDate={icos.find(ico => ico.contract_id === selectedIcoId)?.start_date || ''}
           icoEndDate={icos.find(ico => ico.contract_id === selectedIcoId)?.end_date || ''}
+          onSuccess={() => {
+            fetchICOs();
+          }}
         />
       )}
     </div>

@@ -7,7 +7,7 @@ export interface ICOData {
   start_date: string;
   end_date: string;
   total_supply: number;
-  contract_id: number;  // bigintからnumberに変更
+  contract_id: number;
   header_image_url: string;
   icon_image_url: string;
   min_purchase: number;

@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useContractWrite, useWaitForTransaction } from 'wagmi';
 import { ICO_ABI } from '../contracts/abis';
 import { parseEther } from 'viem';
+import supabaseClient from '../lib/supabaseClient';
+import { formatDateForInput } from '../utils/date';
 
 interface SalePhase {
   startDate: string;
@@ -28,25 +30,65 @@ const SalePhaseModal: React.FC<SalePhaseModalProps> = ({
   icoEndDate,
   onSuccess
 }) => {
-  const [phases, setPhases] = useState<SalePhase[]>([{
-    startDate: icoStartDate,
-    endDate: icoEndDate,
-    price: '',
-    maxAllocation: ''
-  }]);
+  const [phases, setPhases] = useState<SalePhase[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
+      fetchExistingPhases();
     } else {
       document.body.style.overflow = 'unset';
     }
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [isOpen]);
+  }, [isOpen, icoId]); // icoIdを依存配列に追加
+  
+  const fetchExistingPhases = async () => {
+    if (!icoId) return;
+    try {
+      // ico情報を取得（価格と最大配分も含める）
+      const { data: icoData, error: icoError } = await supabaseClient
+        .from('icos')
+        .select('id, price, max_purchase')
+        .eq('contract_id', icoId)
+        .single();
+  
+      if (icoError) throw icoError;
+      if (!icoData) throw new Error('ICO not found');
+  
+      const { data: phaseData, error } = await supabaseClient
+        .from('sale_phases')
+        .select('*')
+        .eq('ico_id', icoData.id)
+        .order('phase_number');
+  
+      if (error) throw error;
+  
+      if (phaseData && phaseData.length > 0) {
+        // 既存のフェーズ情報がある場合
+        setPhases(phaseData.map(phase => ({
+          startDate: formatDateForInput(phase.start_date),
+          endDate: formatDateForInput(phase.end_date),
+          price: phase.price.toString(),
+          maxAllocation: phase.max_allocation.toString()
+        })));
+      } else {
+        // 新規作成時は ICO の情報を初期値として設定
+        setPhases([{
+          startDate: formatDateForInput(icoStartDate),
+          endDate: formatDateForInput(icoEndDate),
+          price: icoData.price.toString(),
+          maxAllocation: icoData.max_purchase.toString()
+        }]);
+      }
+    } catch (error) {
+      console.error('Error fetching sale phases:', error);
+      setError('フェーズ情報の取得に失敗しました');
+    }
+  };
 
   const { write: setSalePhases, data: salePhaseData } = useContractWrite({
     address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
@@ -170,45 +212,45 @@ const SalePhaseModal: React.FC<SalePhaseModalProps> = ({
         <>
           <motion.div
             initial={{ opacity: 0 }}
-            animate={{ opacity: 0.5 }}
+            animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/30 z-40"
             onClick={onClose}
           />
           
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="fixed left-1/2 top-[10%] -translate-x-1/2 w-full max-w-lg bg-white rounded-lg shadow-xl z-50"
-          >
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-primary-900">セールフェーズ設定</h2>
-                <button
-                  onClick={onClose}
-                  className="text-gray-400 hover:text-gray-500"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+          <div className="fixed inset-0 flex items-center justify-center z-50 px-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            >
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold text-primary-900">セールフェーズ設定</h2>
+                  <button
+                    onClick={onClose}
+                    className="text-gray-400 hover:text-gray-500"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
 
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 rounded"
-                >
-                  <p className="text-sm text-red-700">{error}</p>
-                </motion.div>
-              )}
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 rounded"
+                  >
+                    <p className="text-sm text-red-700">{error}</p>
+                  </motion.div>
+                )}
 
-              <div className="mb-6">
-                <div className="bg-white rounded-lg space-y-6">
+                <div className="space-y-6">
                   {phases.map((phase, index) => (
-                    <div key={index} className="space-y-4">
+                    <div key={index} className="p-4 bg-gray-50 rounded-lg space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-medium text-primary-900">フェーズ {index + 1}</h3>
                         {index > 0 && (
@@ -223,99 +265,99 @@ const SalePhaseModal: React.FC<SalePhaseModalProps> = ({
                         )}
                       </div>
 
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm text-gray-500 mb-1">開始日時</label>
-                            <input
-                              type="datetime-local"
-                              value={phase.startDate}
-                              onChange={(e) => handlePhaseChange(index, 'startDate', e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm text-gray-500 mb-1">終了日時</label>
-                            <input
-                              type="datetime-local"
-                              value={phase.endDate}
-                              onChange={(e) => handlePhaseChange(index, 'endDate', e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
-                            />
-                          </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm text-gray-500 mb-1">開始日時</label>
+                          <input
+                            type="datetime-local"
+                            value={phase.startDate}
+                            onChange={(e) => handlePhaseChange(index, 'startDate', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                            min={formatDateForInput(icoStartDate)}
+                            max={formatDateForInput(icoEndDate)}
+                          />
                         </div>
+                        <div>
+                          <label className="block text-sm text-gray-500 mb-1">終了日時</label>
+                          <input
+                            type="datetime-local"
+                            value={phase.endDate}
+                            onChange={(e) => handlePhaseChange(index, 'endDate', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                          />
+                        </div>
+                      </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm text-gray-500 mb-1">価格 (USDT)</label>
-                            <input
-                              type="number"
-                              value={phase.price}
-                              onChange={(e) => handlePhaseChange(index, 'price', e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
-                              placeholder="0.0"
-                              step="0.000001"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm text-gray-500 mb-1">最大配分 (USDT)</label>
-                            <input
-                              type="number"
-                              value={phase.maxAllocation}
-                              onChange={(e) => handlePhaseChange(index, 'maxAllocation', e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
-                              placeholder="10000"
-                              step="0.01"
-                            />
-                          </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm text-gray-500 mb-1">価格 (USDT)</label>
+                          <input
+                            type="number"
+                            value={phase.price}
+                            onChange={(e) => handlePhaseChange(index, 'price', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                            placeholder="0.0"
+                            step="0.000001"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-500 mb-1">最大配分 (USDT)</label>
+                          <input
+                            type="number"
+                            value={phase.maxAllocation}
+                            onChange={(e) => handlePhaseChange(index, 'maxAllocation', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                            placeholder="10000"
+                            step="0.01"
+                          />
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
-              </div>
 
-              <button
-                onClick={addPhase}
-                className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-md text-sm flex items-center justify-center space-x-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                <span>フェーズを追加</span>
-              </button>
-
-              <div className="mt-6 flex space-x-3">
                 <button
-                  onClick={onClose}
-                  className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium"
+                  onClick={addPhase}
+                  className="w-full mt-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-md text-sm flex items-center justify-center space-x-2"
                 >
-                  キャンセル
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  <span>フェーズを追加</span>
                 </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={isProcessing || isWaitingForTx}
-                  className="flex-1 px-4 py-2 bg-black hover:bg-gray-900 text-white rounded-md text-sm font-medium disabled:opacity-50"
-                >
-                  {isProcessing || isWaitingForTx ? (
-                    <span className="flex items-center justify-center space-x-2">
-                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      <span>{isWaitingForTx ? 'トランザクション処理中...' : '保存中...'}</span>
-                    </span>
-                  ) : (
-                    '保存'
-                  )}
-                </button>
-              </div>
 
-              <p className="mt-3 text-xs text-center text-gray-500">
-                ※変更を保存するにはウォレットでの承認が必要です
-              </p>
-            </div>
-          </motion.div>
+                <div className="mt-6 flex space-x-3">
+                  <button
+                    onClick={onClose}
+                    className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    onClick={handleSubmit}
+                    disabled={isProcessing || isWaitingForTx}
+                    className="flex-1 px-4 py-2 bg-black hover:bg-gray-900 text-white rounded-md text-sm font-medium disabled:opacity-50"
+                  >
+                    {isProcessing || isWaitingForTx ? (
+                      <span className="flex items-center justify-center space-x-2">
+                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>{isWaitingForTx ? 'トランザクション処理中...' : '保存中...'}</span>
+                      </span>
+                    ) : (
+                      '保存'
+                    )}
+                  </button>
+                </div>
+
+                <p className="mt-3 text-xs text-center text-gray-500">
+                  ※変更を保存するにはウォレットでの承認が必要です
+                </p>
+              </div>
+            </motion.div>
+          </div>
         </>
       )}
     </AnimatePresence>
